@@ -1,6 +1,8 @@
 # POD
 
-POD reads the same crypto ETF flow data that big institutions watch, turns it into a single score from 0 to 100 for ten major coins, and explains the reasoning in plain English. You can look at the scores on a web dashboard or get them in Telegram. From Telegram you can also place a test trade based on a score.
+*Institutional ETF-flow scores for crypto — on a web dashboard and in Telegram.*
+
+POD reads the same crypto ETF flow data that institutional desks watch every morning, turns it into a single score from 0 to 100 for ten major coins, and explains the reasoning in plain English. You can read the scores on a web dashboard or get them in Telegram. From Telegram you can also place a test trade based on a score.
 
 **Live**
 
@@ -18,7 +20,7 @@ Built with the SoSoValue API, the SoDEX trading API, and ValueChain (an EVM-comp
 
 ## What problem this solves
 
-When a spot Bitcoin or Ethereum ETF takes in or loses hundreds of millions of dollars in a day, that tells you something about how serious investors are positioned. A research desk at a fund watches this every morning. Most retail traders never see it, or see it too late, or do not know how to read it.
+When a spot Bitcoin or Ethereum ETF takes in or loses hundreds of millions of dollars in a day, that says something about how serious money is positioned. A research desk at a fund watches this every morning. Most retail traders never see it, or see it too late, or do not know how to read it.
 
 POD does three things:
 
@@ -26,7 +28,7 @@ POD does three things:
 2. **Scores it** — combines those five inputs into one POD Score per coin, with a written explanation that points at the exact numbers behind it.
 3. **Lets you act on it** — the same scores show up in a Telegram bot, where you can place a test trade on SoDEX in a couple of taps.
 
-The idea behind the buildathon is "a one-person on-chain finance business." POD is the signal-to-execution piece of that: research in, a clear call out, and a way to act — all running with no team and no app to install.
+The buildathon's theme is "a one-person on-chain finance business." POD is the signal-to-execution piece of that: data in, a clear call, and a way to act on it — running with no team and no app to install.
 
 ---
 
@@ -40,7 +42,7 @@ The idea behind the buildathon is "a one-person on-chain finance business." POD 
 
 ## How a POD Score is built
 
-Each of the five sources returns two things: a **z-score** (how unusual today's reading is compared to its recent history) and a **weight** (how much that source counts). POD takes the weighted average of the z-scores and squashes it into a 0–100 number with a logistic curve.
+Each of the five sources returns two things: a **z-score** (how unusual today's reading is compared to its recent history) and a **weight** (how much that source counts). POD takes the weighted average of the z-scores and maps it to a 0–100 number through a logistic curve.
 
 ```
 compositeZ = sum(z_i * w_i) / sum(w_i)
@@ -52,7 +54,7 @@ A composite of 0 maps to a score of 50 (neutral). +1.0 maps to about 73. -1.5 ma
 | Source | Weight | What it measures |
 |---|---|---|
 | ETF flow | 40% | Daily net inflow or outflow on spot crypto ETFs, compared with the trailing 30-day average and standard deviation. |
-| Macro events | 20% | Whether a big macro print (FOMC, CPI, jobs) is scheduled in the next 48 hours. If one is, the score leans defensive. |
+| Macro events | 20% | Whether a major macro report (FOMC, CPI, jobs) is scheduled in the next 48 hours. If one is, the score leans defensive. |
 | News sentiment | 15% | Recent featured news for the coin, scored for tone. Older news counts less. |
 | BTC treasuries | 20% | How fast public companies have been buying Bitcoin in the last 30 days. Applies to BTC; passes through zero for other coins. |
 | VC funding | 5% | How much venture money went into crypto in the last 30 days versus the 30 days before. A slow, structural signal. |
@@ -75,7 +77,7 @@ The dashboard works on a phone — the drawer becomes a bottom sheet. There is a
 
 ### Web — per-coin detail (`/asset/[symbol]`)
 
-A full page for one coin: the score gauge, the reasoning, every source contribution with its citation (for example `SoSoValue /etfs/summary-history (30d)`), the target basket, and a 30-day score trace. The trace is an indicative line for now and is labelled as such — see Limitations.
+A full page for one coin: the score gauge, the reasoning, every source contribution with its citation (for example `SoSoValue /etfs/summary-history (30d)`), the target basket, and a 30-day score trace. The trace is an indicative line for now — see [What is not done yet](#what-is-not-done-yet).
 
 ![Per-coin detail page](docs/images/asset.png)
 
@@ -102,7 +104,7 @@ The bot and the web dashboard read the same cached scores, so a number you see i
 
 ---
 
-## On-chain
+## On-chain contracts
 
 The project's contracts are deployed on the ValueChain testnet (chain ID 138565):
 
@@ -118,15 +120,15 @@ cast code 0x0723dc7D775864ec08797e84d2A5E068876B221B \
   --rpc-url https://testnet-rpc.valuechain.xyz
 ```
 
-`ReasoningLogger` is meant to anchor a hash of each score's underlying data on chain, so a score POD quotes can be checked later. `DrawdownGuard` enforces a drawdown cap for the vault design. To build the contracts yourself, run `forge install` first inside `packages/pod-contracts` (the OpenZeppelin and forge-std libraries are not vendored), then `forge test`.
+`ReasoningLogger` is the on-chain anchor for a hash of each score's underlying data, so a score POD quotes can be checked later. `DrawdownGuard` enforces a drawdown cap for the vault design. Wiring the scoring pipeline to write a hash on every score is the next step — see [What is not done yet](#what-is-not-done-yet). To build the contracts yourself, run `forge install` inside `packages/pod-contracts` first (the OpenZeppelin and forge-std libraries are not vendored), then `forge test`.
 
-A note on getting native gas for the deploy: the SoDEX testnet faucet only drips USDC, not the native SOSO needed to pay gas. We got around it by buying WSOSO on the SoDEX spot market and then using the `transferAsset` endpoint (`type=2`, `toAccountID=999` — `EVM_WITHDRAW`) to move it to the deployer wallet as native gas. The script is at `apps/pod-web/scripts/withdraw-wsoso-to-evm.mts`.
+A note on getting native gas for the deploy: the SoDEX testnet faucet only drips USDC, not the native SOSO that pays for gas. The workaround was to buy WSOSO on the SoDEX spot market, then use the `transferAsset` endpoint (`type=2`, `toAccountID=999` — `EVM_WITHDRAW`) to move it to the deployer wallet as native gas. The script for that is `apps/pod-web/scripts/withdraw-wsoso-to-evm.mts`.
 
 ---
 
 ## Run it locally
 
-You need Node 20+ and pnpm 9+.
+You need Node 22+ and pnpm 10+ (the repo pins `pnpm@10.32.1` via `packageManager`).
 
 ```bash
 git clone https://github.com/Pratiikpy/pod.git
@@ -177,7 +179,7 @@ Everything is reproducible: the scoring code is in `packages/signal-engine`, the
 
 ## How this maps to the judging criteria
 
-**User value and practical impact.** POD takes data that real desks use — ETF flows, macro calendar, corporate Bitcoin holdings — and turns it into one number with a reason attached. A trader gets the institutional read on the ten ETF coins for free, in the place they already spend time, and can act on it with a confirm step. The risk profile changes how trades are sized.
+**User value and practical impact.** POD takes data that real desks use — ETF flows, the macro calendar, corporate Bitcoin holdings — and turns it into one number with a reason attached. A trader gets the institutional read on the ten ETF coins for free, in the place they already spend time, and can act on it behind a confirm step. The chosen risk profile shapes the target basket POD shows for the coin.
 
 **Functionality and working demo.** There are four working surfaces: the web dashboard, the per-coin pages and the methodology page, the Telegram bot with `/signal` `/score` `/trade`, and the deployed contracts on ValueChain testnet. The public `/api/scores` endpoint is live. None of the core flow is mocked.
 
@@ -189,17 +191,18 @@ Everything is reproducible: the scoring code is in `packages/signal-engine`, the
 
 ---
 
-## What is not done yet (honest list)
+## What is not done yet
 
-- **`/trade` uses one shared wallet.** Right now the bot signs every test trade with a single `SODEX_PRIVATE_KEY` set on the server. That is custodial, and it is fine for a testnet demo where nothing has value, but it is not how a real product should work. The intended design is an embedded wallet per user (Privy or similar) so each person signs their own trades and POD never holds keys. That is the next step.
-- **`/trade` depends on the testnet venue state for the coin.** The demo wallet is authorised to trade — it has placed real orders on SoDEX testnet (for example a `SOSO/USDC` market buy that came back with an order ID). But the `BTC/USDC` pair on the testnet intermittently goes into "cancel only mode", and `TESTBTC/USDC` sometimes reports `MissingOraclePrice`. When that happens, `/trade` builds the order, signs it (EIP-712), and submits it — and the bot reports back exactly which venue state it hit. So whether a `/trade` on BTC fills depends on what state the testnet pair is in at that moment, not on any account permission.
+- **`/trade` uses one shared wallet.** The bot signs every test trade with a single `SODEX_PRIVATE_KEY` set on the server. That is custodial. It is fine for a testnet demo where nothing has value, but it is not how a real product should work. The intended design is an embedded wallet per user (Privy or similar) so each person signs their own trades and POD never holds keys. That is the next step.
+- **`/trade` depends on the testnet venue state for the coin.** The demo wallet is authorised to trade — it has placed real orders on the SoDEX testnet (a `SOSO/USDC` market buy that came back with an order ID). But the `BTC/USDC` pair on the testnet intermittently goes into "cancel only mode", and `TESTBTC/USDC` sometimes reports `MissingOraclePrice`. When that happens, `/trade` still builds the order, signs it (EIP-712), and submits it — and the bot reports back the exact venue state. So whether a `/trade` on BTC fills depends on what state the testnet pair is in at that moment, not on any account permission.
+- **The `ReasoningLogger` contract is deployed but not yet written to.** The scoring pipeline does not yet push a hash on every score. The contract is live; wiring the write path is pending.
 - **No score history database yet.** The 30-day trace on the per-coin page is an indicative line, not real history. The daily cron job (`/api/cron/daily-signal`) is set up to record scores; once it has run for a month the trace will be real. Persisting to a real database (Postgres on the Vercel marketplace) is on the list.
 - **The composite weights are fixed in code.** POD does not yet learn the weights from outcomes — there is no backtest loop tuning them. The weights are a reasonable starting point, not a trained model.
-- **SoSoValue free-tier rate limits.** On a busy run, individual sources can get rate-limited and skip. The drawer shows this with the "Sources (N/5)" count, and the score falls back to the sources that did return. We do not pretend the missing data is there.
-- **Testnet only.** Every trade is on the SoDEX testnet. The on-chain receipts are real transactions on the ValueChain testnet, not mainnet. There is no real money at risk and none to be made.
-- **Reasoning is English-first.** The bot has four languages for its UI text, but the AI-written explanations are generated in English. Translating the reasoning itself is later work.
+- **SoSoValue free-tier rate limits.** On a busy run, individual sources can get rate-limited and skip. The drawer shows this with the "Sources (N/5)" count, and the score falls back to the sources that did return. POD does not pretend the missing data is there.
+- **Testnet only.** Every trade is on the SoDEX testnet. The on-chain transactions are real, on the ValueChain testnet, not mainnet. There is no real money at risk and none to be made.
+- **Reasoning is English-first.** The bot's UI text has four languages, but the AI-written explanations are generated in English. Translating the reasoning itself is later work.
 
-These are tracked, not swept under the rug. The README and the `/how-it-works` page both say the same thing.
+Every one of these is also stated on the `/how-it-works` page.
 
 ---
 
@@ -236,4 +239,4 @@ pod/
 
 ## License
 
-MIT. Built by one person for the SoSoValue Buildathon — leaning into the "one-person on-chain finance business" idea on purpose.
+MIT. Built by one person for the SoSoValue Buildathon, in the spirit of the "one-person on-chain finance business" theme.
