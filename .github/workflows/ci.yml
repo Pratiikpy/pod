@@ -31,11 +31,13 @@ jobs:
           pnpm --filter @pod/sodex-sdk build
           pnpm --filter @pod/signal-engine build
 
+      # Exclude the root project (re-included by a negative-only filter) and the
+      # Solidity package — it has its own job below, and forge isn't on this runner.
       - name: Typecheck
-        run: pnpm -r --if-present typecheck
+        run: pnpm -r --if-present --filter='!@pod/pod-contracts' --filter='!pod' typecheck
 
       - name: Test
-        run: pnpm -r --if-present test
+        run: pnpm -r --if-present --filter='!@pod/pod-contracts' --filter='!pod' test
 
   contracts:
     name: Solidity (forge build + test)
