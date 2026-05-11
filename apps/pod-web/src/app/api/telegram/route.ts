@@ -33,12 +33,13 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 /**
- * Production Telegram bot — full feature surface.
+ * POD Telegram bot.
  *
- *  - Multi-language onboarding (EN / 中文 / 日本語 / 한국어)
- *  - 5 commands: /start /signal /score /trade /lang /help
- *  - AI personality narration via NVIDIA NIM
- *  - Real SoDEX testnet trade execution via /trade (gated until API key approved)
+ *  - Multi-language UI (English / 中文 / 日本語 / 한국어)
+ *  - Commands: /start /signal /score /trade /lang /help
+ *  - AI-written explanation via NVIDIA NIM (falls back to template text)
+ *  - /trade builds, signs (EIP-712), and submits a real order on the SoDEX testnet
+ *  - Scores come from the same 10-minute cache the web dashboard uses
  */
 
 type Lang = 'en' | 'zh' | 'ja' | 'ko';
@@ -60,10 +61,10 @@ const SUPPORTED_ASSETS: EtfSymbol[] = ['BTC', 'ETH', 'SOL'];
 
 function welcome(lang: Lang): string {
   return {
-    en: `👋 Hey, I'm POD.\n\nI grow your crypto using Wall Street's playbook — real spot ETF flow data, macro events, news.\n\n• /signal — full BTC analysis\n• /score [BTC|ETH|SOL] — quick lookup\n• /trade — execute on testnet (gated)\n• /lang — change language\n• /help — show commands`,
-    zh: `👋 你好，我是 POD。\n\n我用华尔街的真实数据（现货 ETF 流入、宏观事件、新闻）帮你管理加密资产。\n\n• /signal — BTC 完整分析\n• /score [BTC|ETH|SOL] — 快速查询\n• /trade — 测试网执行\n• /lang — 切换语言\n• /help — 命令列表`,
-    ja: `👋 こんにちは、POD です。\n\nウォール街と同じデータ（現物 ETF フロー、マクロイベント、ニュース）であなたの暗号資産を運用します。\n\n• /signal — BTC 完全分析\n• /score [BTC|ETH|SOL] — クイック\n• /trade — テストネット実行\n• /lang — 言語変更\n• /help — コマンド`,
-    ko: `👋 안녕하세요, POD입니다.\n\n월스트리트가 사용하는 데이터(현물 ETF 흐름, 매크로, 뉴스)로 암호화폐를 키웁니다.\n\n• /signal — BTC 전체 분석\n• /score [BTC|ETH|SOL] — 빠른 조회\n• /trade — 테스트넷 실행\n• /lang — 언어 변경\n• /help — 도움말`,
+    en: `POD scores ten crypto coins from institutional ETF flow data, macro events, news, corporate Bitcoin holdings, and venture funding.\n\n/signal — full BTC analysis\n/score BTC|ETH|SOL — one-line score for a coin\n/trade — place a test order on SoDEX testnet\n/lang — change language\n/help — list commands`,
+    zh: `POD 用机构级数据为十个加密币种打分：现货 ETF 流入、宏观事件、新闻、企业比特币持仓、风投融资。\n\n/signal — BTC 完整分析\n/score BTC|ETH|SOL — 单币种评分\n/trade — 在 SoDEX 测试网下单\n/lang — 切换语言\n/help — 命令列表`,
+    ja: `POD は機関投資家レベルのデータ（現物 ETF フロー、マクロイベント、ニュース、企業のビットコイン保有、VC 資金）で 10 銘柄をスコアリングします。\n\n/signal — BTC の詳細分析\n/score BTC|ETH|SOL — 銘柄ごとのスコア\n/trade — SoDEX テストネットで注文\n/lang — 言語変更\n/help — コマンド一覧`,
+    ko: `POD는 기관급 데이터(현물 ETF 흐름, 매크로, 뉴스, 기업 비트코인 보유, VC 펀딩)로 10개 코인을 평가합니다.\n\n/signal — BTC 전체 분석\n/score BTC|ETH|SOL — 코인별 점수\n/trade — SoDEX 테스트넷 주문\n/lang — 언어 변경\n/help — 명령어 목록`,
   }[lang];
 }
 
@@ -78,21 +79,21 @@ function help(lang: Lang): string {
 
 function signalCard(lang: Lang, signal: PodSignal): string {
   const directionLabels: Record<PodSignal['direction'], Record<Lang, string>> = {
-    STRONG_BUY: { en: 'Strong Buy 🟢', zh: '强买入 🟢', ja: '強い買い 🟢', ko: '강력 매수 🟢' },
-    BUY: { en: 'Buy 🟢', zh: '买入 🟢', ja: '買い 🟢', ko: '매수 🟢' },
-    HOLD: { en: 'Hold 🟡', zh: '持有 🟡', ja: 'ホールド 🟡', ko: '보유 🟡' },
-    SELL: { en: 'Reduce 🔴', zh: '减仓 🔴', ja: '減らす 🔴', ko: '축소 🔴' },
-    STRONG_SELL: { en: 'Defensive 🔴', zh: '防御 🔴', ja: '防御 🔴', ko: '방어 🔴' },
+    STRONG_BUY: { en: 'Strong buy', zh: '强买入', ja: '強い買い', ko: '강력 매수' },
+    BUY: { en: 'Buy', zh: '买入', ja: '買い', ko: '매수' },
+    HOLD: { en: 'Hold', zh: '持有', ja: 'ホールド', ko: '보유' },
+    SELL: { en: 'Reduce', zh: '减仓', ja: '減らす', ko: '축소' },
+    STRONG_SELL: { en: 'Defensive', zh: '防御', ja: '防御', ko: '방어' },
   };
   const directionLabel = directionLabels[signal.direction][lang];
   const baskets = signal.targetBasket
-    .map((b) => `  • ${b.symbol}: ${(b.weight * 100).toFixed(0)}%`)
+    .map((b) => `  ${b.symbol}: ${(b.weight * 100).toFixed(0)}%`)
     .join('\n');
   const headline = {
-    en: `📊 *Today's signal for ${signal.asset}*`,
-    zh: `📊 *今日 ${signal.asset} 信号*`,
-    ja: `📊 *${signal.asset} の本日のシグナル*`,
-    ko: `📊 *오늘의 ${signal.asset} 시그널*`,
+    en: `*${signal.asset} — POD Score*`,
+    zh: `*${signal.asset} — POD 评分*`,
+    ja: `*${signal.asset} — POD スコア*`,
+    ko: `*${signal.asset} — POD 점수*`,
   }[lang];
   return [
     headline,
@@ -201,9 +202,9 @@ function getHandler() {
     const state = getOrCreateState(ctx);
     await ctx.reply(welcome(state.language), {
       reply_markup: new InlineKeyboard()
-        .text('🛡️ Chill', 'risk:CHILL')
-        .text('⚖️ Balanced', 'risk:BALANCED')
-        .text('🚀 Send it', 'risk:SEND_IT'),
+        .text('Chill', 'risk:CHILL')
+        .text('Balanced', 'risk:BALANCED')
+        .text('Send it', 'risk:SEND_IT'),
     });
   });
 
@@ -211,24 +212,24 @@ function getHandler() {
   bot.callbackQuery(/^risk:(CHILL|BALANCED|SEND_IT)$/, async (ctx) => {
     const state = getOrCreateState(ctx);
     state.riskProfile = ctx.match[1] as RiskProfile;
-    await ctx.answerCallbackQuery({ text: `Vibe: ${state.riskProfile}` });
-    await ctx.reply(`✅ Vibe locked: ${state.riskProfile}.\n\nNow try /signal for a live BTC analysis.`);
+    await ctx.answerCallbackQuery({ text: `Risk profile: ${state.riskProfile}` });
+    await ctx.reply(`Risk profile set: ${state.riskProfile}. Try /signal for a live BTC analysis.`);
   });
 
   // /signal
   bot.command('signal', async (ctx) => {
     const state = getOrCreateState(ctx);
-    await ctx.reply('🤖 Reading the flow…');
+    await ctx.reply('Reading the flow…');
     const b = await getBubble('BTC');
     if (!b || b.citation === 'No live data') {
-      await ctx.reply('⚠️ Live data unavailable right now (rate limit). Try again in a minute.');
+      await ctx.reply('Live data is unavailable right now (rate limit). Try again in a minute.');
       return;
     }
     const signal = bubbleToSignal(b);
     // signalCard text is fully controlled (no user input, balanced *bold*) — Markdown is safe here.
     await ctx.reply(signalCard(state.language, signal), { parse_mode: 'Markdown' });
     const narration = await narrate(signal, state.personality, state.language);
-    if (narration) await ctx.reply(`🧠 ${narration}`);
+    if (narration) await ctx.reply(narration);
   });
 
   // /score [SYMBOL]
@@ -239,7 +240,7 @@ function getHandler() {
       : 'BTC';
     const b = await getBubble(asset);
     if (!b || b.citation === 'No live data') {
-      await ctx.reply('⚠️ Live data unavailable right now. Try again in a minute.');
+      await ctx.reply('Live data is unavailable right now. Try again in a minute.');
       return;
     }
     await ctx.reply(
@@ -253,28 +254,28 @@ function getHandler() {
     const tradePk = process.env['SODEX_PRIVATE_KEY'] as Hex | undefined;
     if (!tradePk) {
       await ctx.reply(
-        '⚠️ Trade execution not configured on this deployment.\nProduction gives each user their own embedded wallet — Wave 2.',
+        'Trade execution is not configured on this deployment. The production design gives each user their own embedded wallet.',
       );
       return;
     }
     const b = await getBubble('BTC');
     if (!b || b.citation === 'No live data') {
-      await ctx.reply('⚠️ Live data unavailable — cannot build a trade right now.');
+      await ctx.reply('Live data is unavailable, so a trade cannot be built right now.');
       return;
     }
     const funds = 6; // fixed $6 testnet ticket
     if (b.direction !== 'BUY' && b.direction !== 'STRONG_BUY') {
       await ctx.reply(
-        `📊 BTC POD Score ${b.score}/100 — direction ${b.direction}.\n\nNo trade: Wave 1 only acts on BUY / STRONG_BUY. Nothing to confirm.`,
+        `BTC POD Score ${b.score}/100, direction ${b.direction}. No trade — POD only acts on BUY or STRONG_BUY. Nothing to confirm.`,
       );
       return;
     }
     await ctx.reply(
-      `🧾 Trade confirm\n\nBuy $${funds} of BTC at market on SoDEX testnet.\nBasis: POD Score ${b.score}/100 (${b.direction}, z=${b.z.toFixed(2)}).\n\nThis is a real testnet order signed with the demo wallet. No mainnet value.`,
+      `Trade confirmation\n\nBuy $${funds} of BTC at market on the SoDEX testnet.\nBasis: POD Score ${b.score}/100 (${b.direction}, z=${b.z.toFixed(2)}).\n\nThis is a real testnet order signed with the demo wallet. No mainnet value.`,
       {
         reply_markup: new InlineKeyboard()
-          .text('✅ Confirm', `trade:go:${funds}`)
-          .text('✕ Cancel', 'trade:cancel'),
+          .text('Confirm', `trade:go:${funds}`)
+          .text('Cancel', 'trade:cancel'),
       },
     );
   });
@@ -282,35 +283,35 @@ function getHandler() {
   // /trade — cancel
   bot.callbackQuery('trade:cancel', async (ctx) => {
     await ctx.answerCallbackQuery({ text: 'Cancelled' });
-    await ctx.editMessageText('✕ Trade cancelled. Nothing was sent.');
+    await ctx.editMessageText('Trade cancelled. Nothing was sent.');
   });
 
   // /trade — confirmed: execute
   bot.callbackQuery(/^trade:go:(\d+)$/, async (ctx) => {
     const funds = Number(ctx.match[1]);
     await ctx.answerCallbackQuery({ text: 'Submitting…' });
-    await ctx.editMessageText('🤖 Submitting order to SoDEX testnet…');
+    await ctx.editMessageText('Submitting the order to the SoDEX testnet…');
     const tradePk = process.env['SODEX_PRIVATE_KEY'] as Hex;
     const b = await getBubble('BTC');
     if (!b) {
-      await ctx.reply('⚠️ Lost the signal — try /trade again.');
+      await ctx.reply('Lost the signal — run /trade again.');
       return;
     }
     try {
       const trade = await tradeOnSignal({ privateKey: tradePk, signal: bubbleToSignal(b), fundsUsd: funds });
       // Plain text only — SoDEX responses contain chars that break Telegram Markdown.
-      let body = `📊 BTC ${b.direction} (POD Score ${b.score}/100)\n\n`;
+      let body = `BTC ${b.direction} (POD Score ${b.score}/100)\n\n`;
       if (!trade.attempted) {
-        body += `⏸ ${trade.reason ?? trade.error ?? 'no trade'}`;
+        body += `No order placed. ${trade.reason ?? trade.error ?? 'nothing to trade'}`;
       } else if (trade.error) {
-        body += `❌ ${trade.error}\n\n(Testnet trading needs the wallet whitelisted by the SoDEX team — this is the expected gate.)`;
+        body += `Order not placed. ${trade.error}`;
       } else {
         const resp = JSON.stringify(trade.result).slice(0, 500);
-        body += `🚀 Order submitted.\nSymbol ID: ${trade.symbolID}\nFunds: $${trade.funds}\nResponse: ${resp}`;
+        body += `Order submitted.\nSymbol ID: ${trade.symbolID}\nFunds: $${trade.funds}\nResponse: ${resp}`;
       }
       await ctx.reply(body);
     } catch (err) {
-      await ctx.reply(`💥 ${(err as Error).message}`);
+      await ctx.reply(`Error: ${(err as Error).message}`);
     }
   });
 
@@ -318,11 +319,11 @@ function getHandler() {
   bot.command('lang', async (ctx) => {
     await ctx.reply('Pick your language:', {
       reply_markup: new InlineKeyboard()
-        .text('🇬🇧 English', 'lang:en')
-        .text('🇨🇳 中文', 'lang:zh')
+        .text('English', 'lang:en')
+        .text('中文', 'lang:zh')
         .row()
-        .text('🇯🇵 日本語', 'lang:ja')
-        .text('🇰🇷 한국어', 'lang:ko'),
+        .text('日本語', 'lang:ja')
+        .text('한국어', 'lang:ko'),
     });
   });
 
@@ -330,7 +331,7 @@ function getHandler() {
     const state = getOrCreateState(ctx);
     state.language = ctx.match[1] as Lang;
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText(`✅ Language: ${state.language}`);
+    await ctx.editMessageText(`Language: ${state.language}`);
   });
 
   // /help
