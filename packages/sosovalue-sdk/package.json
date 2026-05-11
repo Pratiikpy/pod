@@ -1,0 +1,38 @@
+{
+  "name": "@pod/sosovalue-sdk",
+  "version": "0.1.0",
+  "description": "Typed TypeScript client for the SoSoValue API (all 9 modules)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./modules/*": {
+      "types": "./dist/modules/*.d.ts",
+      "import": "./dist/modules/*.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ofetch": "^1.4.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "msw": "^2.7.0",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

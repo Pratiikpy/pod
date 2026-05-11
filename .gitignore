@@ -1,0 +1,67 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# Foundry artifacts
+ssi-protocol/
+packages/pod-contracts/cache/
+packages/pod-contracts/out/
+# (packages/pod-contracts/broadcast/ is kept — it carries the on-chain deployment record)
+
+# Environment — never commit real secrets
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Vercel CLI state (build config lives in vercel.json instead)
+.vercel/
+
+# Coverage / cache
+coverage/
+.nyc_output/
+.cache/
+.turbo/
+
+# Local tooling / scratch — not part of the project
+.claude/
+.playwright-mcp/
+design-source/
+HACKATHON.md
+SUBMISSION.md
+SUBMISSIONS.md
+CLAUDE.md
+pod-*.png
+
+# Internal planning notes — not part of the public project
+docs/BEST_VERSION_PLAN.md
+docs/BIG_IDEAS.md
+docs/BUILD_STATUS.md
+docs/DEPLOYED.md
+docs/FINAL_IDEA_POD.md
+docs/POD_FULL_FEATURE_SPEC.md
+docs/POD_MAXIMUM_VERSION.md
+docs/POD_PRD.md
+docs/VERIFIED_PERFECT_IDEA.md
+
+# Foundry dependencies — restored with: forge install
+packages/pod-contracts/lib/

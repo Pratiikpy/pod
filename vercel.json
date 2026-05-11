@@ -1,0 +1,16 @@
+{
+  "framework": "nextjs",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm --filter @pod/sosovalue-sdk build && pnpm --filter @pod/sodex-sdk build && pnpm --filter @pod/signal-engine build && pnpm --filter @pod/pod-web build",
+  "outputDirectory": "apps/pod-web/.next",
+  "crons": [
+    {
+      "path": "/api/cron/daily-signal",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/nav-update",
+      "schedule": "0 5 * * *"
+    }
+  ]
+}

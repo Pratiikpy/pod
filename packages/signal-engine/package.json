@@ -1,0 +1,36 @@
+{
+  "name": "@pod/signal-engine",
+  "version": "0.1.0",
+  "description": "Multi-factor signal engine — ETF flow alpha + macro + news + treasury + VC fusion",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "backtest": "tsx scripts/run-backtest.ts",
+    "smoke": "tsx scripts/smoke-test.ts"
+  },
+  "dependencies": {
+    "@pod/sosovalue-sdk": "workspace:*",
+    "dotenv": "^16.4.7",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

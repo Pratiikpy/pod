@@ -1,0 +1,32 @@
+{
+  "name": "@pod/pod-bot",
+  "version": "0.1.0",
+  "description": "POD Telegram bot — Solo + Auto modes",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/local.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pod/signal-engine": "workspace:*",
+    "@pod/sodex-sdk": "workspace:*",
+    "@pod/sosovalue-sdk": "workspace:*",
+    "@privy-io/server-auth": "^1.20.0",
+    "drizzle-orm": "^0.38.3",
+    "dotenv": "^16.4.7",
+    "grammy": "^1.32.0",
+    "openai": "^4.79.0",
+    "postgres": "^3.4.5",
+    "viem": "^2.21.55",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

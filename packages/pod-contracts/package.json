@@ -1,0 +1,13 @@
+{
+  "name": "@pod/pod-contracts",
+  "version": "0.1.0",
+  "description": "POD smart contracts — PodVault, DrawdownGuard, ReasoningLogger",
+  "private": true,
+  "scripts": {
+    "build": "forge build",
+    "test": "forge test -vv",
+    "test:gas": "forge test --gas-report",
+    "fmt": "forge fmt",
+    "snapshot": "forge snapshot"
+  }
+}
