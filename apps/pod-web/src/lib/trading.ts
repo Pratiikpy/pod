@@ -20,8 +20,8 @@ export interface TradeAttempt {
 }
 
 const SUPPORTED_SYMBOLS: Record<string, string[]> = {
-  BTC: ['TESTBTC/USDC', 'BTC/USDC'],
-  ETH: ['TESTETH/USDC', 'ETH/USDC'],
+  BTC: ['BTC/USDC', 'TESTBTC/USDC'],
+  ETH: ['ETH/USDC', 'TESTETH/USDC'],
   SOL: ['SOL/USDC'],
 };
 
@@ -73,46 +73,47 @@ export async function tradeOnSignal(params: {
   }
 
   const candidates = SUPPORTED_SYMBOLS[signal.asset] ?? [];
-  const target = symbols.find(
+  const targets = symbols.filter(
     (s) => s.status === 'TRADING' && candidates.includes(s.displayName ?? s.name),
   );
-  if (!target) {
+  if (targets.length === 0) {
     return {
       attempted: false,
-      reason: `No tradable pair for ${signal.asset} on testnet.`,
+      reason: `No tradable ${signal.asset} pair on SoDEX testnet right now.`,
     };
   }
 
-  const minNotional = Math.max(fundsUsd, Number(target.minNotional ?? '5') + 1);
-  const funds = String(minNotional);
-  const clOrdID = `pod-${Date.now()}-${signal.asset}`;
-
-  try {
-    const result = await sdk.spot.batchNewOrder({
-      accountID,
-      orders: [
-        {
-          symbolID: target.id,
-          clOrdID,
-          side: 'BUY',
-          type: 'MARKET',
-          timeInForce: 'IOC',
-          funds,
-        },
-      ],
-    });
-    return {
-      attempted: true,
-      result,
-      symbolID: target.id,
-      funds,
-    };
-  } catch (err) {
-    return {
-      attempted: true,
-      error: `Order rejected: ${(err as Error).message}`,
-      symbolID: target.id,
-      funds,
-    };
+  // Try each tradable pair in order. On testnet, individual pairs intermittently
+  // go into "cancel only mode" or report "MissingOraclePrice" — that is a venue
+  // state, not an auth problem. Walk the list until one accepts the order, and
+  // if none do, report what happened on each.
+  const notes: string[] = [];
+  for (const target of targets) {
+    const funds = String(Math.max(fundsUsd, Number(target.minNotional ?? '5') + 1));
+    const clOrdID = `pod-${Date.now()}-${signal.asset}`;
+    try {
+      const result = await sdk.spot.batchNewOrder({
+        accountID,
+        orders: [
+          { symbolID: target.id, clOrdID, side: 'BUY', type: 'MARKET', timeInForce: 'IOC', funds },
+        ],
+      });
+      // batchNewOrder returns code 0 at the envelope level even when an individual
+      // order is rejected — unpack the per-order result.
+      const inner = (result as { data?: Array<{ code: number; error?: string }> }).data?.[0];
+      if (inner && inner.code !== 0) {
+        notes.push(`${target.displayName ?? target.name}: ${inner.error ?? 'rejected'}`);
+        continue;
+      }
+      return { attempted: true, result, symbolID: target.id, funds };
+    } catch (err) {
+      notes.push(`${target.displayName ?? target.name}: ${(err as Error).message}`);
+    }
   }
+  return {
+    attempted: true,
+    error: `No ${signal.asset} pair accepted the order. ${notes.join(' · ')}`,
+    symbolID: targets[0]!.id,
+    funds: String(fundsUsd),
+  };
 }
