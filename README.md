@@ -4,6 +4,10 @@
 
 POD reads the same crypto ETF flow data that institutional desks watch every morning, fuses it with five other institutional signals into a single score from 0 to 100 for ten major coins, and explains the reasoning in plain English with every number cited. You read the scores on a web dashboard, ask about them in a Telegram bot, and act on them in one tap — a market order on the SoDEX testnet, or a take-profit, DCA schedule, or limit ladder. Every score is hash-anchored on-chain so it can be verified after the fact.
 
+**▶ Watch the 2-minute demo:** https://youtu.be/cn1l-CzNZhQ — the full web tour plus the Telegram signal-to-execution flow (a live SoDEX testnet order).
+
+[![POD — 2-minute demo](https://img.youtube.com/vi/cn1l-CzNZhQ/maxresdefault.jpg)](https://youtu.be/cn1l-CzNZhQ)
+
 **Live**
 
 | Surface | URL |
