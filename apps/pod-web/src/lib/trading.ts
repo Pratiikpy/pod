@@ -142,6 +142,21 @@ export async function scheduleDeadman(params: { privateKey: Hex; minutes: number
   }
 }
 
+/** Live market price (orderbook best bid) for an asset, or 0. For the TP/SL monitor. */
+export async function getMarketPrice(asset: string): Promise<number> {
+  try {
+    const sdk = SoDEX.publicOnly('testnet');
+    const resp = (await sdk.spot.symbols()) as { data: SymbolInfo[] };
+    const candidates = SUPPORTED_SYMBOLS[asset] ?? [];
+    const symbol = resp.data.find((s) => s.status === 'TRADING' && candidates.includes(s.displayName ?? s.name));
+    if (!symbol) return 0;
+    const ob = (await sdk.spot.orderbook(symbol.name, 3)) as { data?: { bids?: Array<[string, string]> } };
+    return Number(ob.data?.bids?.[0]?.[0] ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
 export async function tradeOnSignal(params: {
   privateKey: Hex;
   signal: PodSignal;

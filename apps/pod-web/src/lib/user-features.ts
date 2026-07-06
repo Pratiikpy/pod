@@ -104,6 +104,73 @@ export async function markDcaRun(id: number): Promise<void> {
   await sql`update dca_schedules set last_run_at = now() where id = ${id}`;
 }
 
+// ── TP/SL (F13) ──────────────────────────────────────────────────────────────
+
+export interface TpslOrder {
+  id: number;
+  telegramId: number;
+  asset: string;
+  takeProfit: number | null;
+  stopLoss: number | null;
+  fundsUsd: number;
+}
+
+export async function addTpsl(
+  telegramId: number,
+  asset: string,
+  takeProfit: number | null,
+  stopLoss: number | null,
+  fundsUsd: number,
+): Promise<boolean> {
+  const sql = db();
+  if (!sql) return false;
+  try {
+    await sql`insert into tpsl_orders (telegram_id, asset, take_profit, stop_loss, funds_usd, active) values (${telegramId}, ${asset}, ${takeProfit}, ${stopLoss}, ${fundsUsd}, true)`;
+    return true;
+  } catch (err) {
+    console.error('[tpsl] add failed:', err);
+    return false;
+  }
+}
+
+export async function listTpsl(telegramId: number): Promise<TpslOrder[]> {
+  const sql = db();
+  if (!sql) return [];
+  const rows = (await sql`select id, telegram_id, asset, take_profit, stop_loss, funds_usd from tpsl_orders where telegram_id = ${telegramId} and active = true order by created_at`) as Array<Record<string, unknown>>;
+  return rows.map(mapTpsl);
+}
+
+export async function clearTpsl(telegramId: number): Promise<number> {
+  const sql = db();
+  if (!sql) return 0;
+  const rows = (await sql`update tpsl_orders set active = false where telegram_id = ${telegramId} and active = true returning id`) as Array<{ id: number }>;
+  return rows.length;
+}
+
+export async function getActiveTpsl(): Promise<TpslOrder[]> {
+  const sql = db();
+  if (!sql) return [];
+  const rows = (await sql`select id, telegram_id, asset, take_profit, stop_loss, funds_usd from tpsl_orders where active = true`) as Array<Record<string, unknown>>;
+  return rows.map(mapTpsl);
+}
+
+export async function markTpslTriggered(id: number, kind: string): Promise<void> {
+  const sql = db();
+  if (!sql) return;
+  await sql`update tpsl_orders set active = false, triggered_at = now(), trigger_kind = ${kind} where id = ${id}`;
+}
+
+function mapTpsl(r: Record<string, unknown>): TpslOrder {
+  return {
+    id: Number(r['id']),
+    telegramId: Number(r['telegram_id']),
+    asset: String(r['asset']),
+    takeProfit: r['take_profit'] === null ? null : Number(r['take_profit']),
+    stopLoss: r['stop_loss'] === null ? null : Number(r['stop_loss']),
+    fundsUsd: Number(r['funds_usd']),
+  };
+}
+
 // ── Webhooks (F31) ───────────────────────────────────────────────────────────
 
 export async function setWebhookUrl(telegramId: number, url: string | null): Promise<boolean> {
