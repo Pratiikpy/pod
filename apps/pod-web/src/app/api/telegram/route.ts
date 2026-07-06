@@ -5,10 +5,26 @@ import {
   type PodSignal,
   type RiskProfile,
 } from '@pod/signal-engine';
-import OpenAI from 'openai';
 import { tradeOnSignal } from '@/lib/trading';
-import { getBubble, type BubbleData } from '@/lib/bubble-data';
+import { getBubble, fetchAllBubbleData, type BubbleData } from '@/lib/bubble-data';
+import { askPod, narrateScore, groundingFromBubbles } from '@/lib/bot/llm';
+import { getOrCreateUser } from '@/lib/bot/store';
+import { SoDEX } from '@pod/sodex-sdk';
 import type { Hex } from 'viem';
+
+/** Read an in-bot wallet's SoDEX testnet USDC balance (0 if none/unfunded). */
+async function walletUsdcBalance(address: string): Promise<number> {
+  try {
+    const sdk = SoDEX.publicOnly('testnet');
+    const resp = (await sdk.spot.balances(address)) as {
+      data?: { balances?: Array<{ coin: string; total: string }> };
+    };
+    const usdc = resp.data?.balances?.find((b) => b.coin === 'vUSDC' || b.coin === 'USDC');
+    return usdc ? Number(usdc.total) : 0;
+  } catch {
+    return 0;
+  }
+}
 
 /**
  * Adapt a cached BubbleData into the PodSignal shape the card + trade code
@@ -70,10 +86,10 @@ function welcome(lang: Lang): string {
 
 function help(lang: Lang): string {
   return {
-    en: `Commands:\n/start /signal /score /trade /lang /help`,
-    zh: `命令：\n/start /signal /score /trade /lang /help`,
-    ja: `コマンド：\n/start /signal /score /trade /lang /help`,
-    ko: `명령어:\n/start /signal /score /trade /lang /help`,
+    en: `Commands:\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <question> — ask about the market in plain English\n/wallet — your in-bot wallet + balance`,
+    zh: `命令：\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <问题> — 用自然语言询问市场\n/wallet — 你的机器人钱包和余额`,
+    ja: `コマンド：\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <質問> — 市場について質問\n/wallet — あなたのウォレットと残高`,
+    ko: `명령어:\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <질문> — 시장에 대해 질문\n/wallet — 내 지갑 및 잔액`,
   }[lang];
 }
 
@@ -109,56 +125,6 @@ function signalCard(lang: Lang, signal: PodSignal): string {
   ].join('\n');
 }
 
-const PERSONALITY_PROMPT: Record<Personality, string> = {
-  PROFESSOR: 'You are a calm, precise financial educator. Cite the data point and what it implies. 2-3 sentences max.',
-  BRO: 'You are a hyped, casual crypto bro. Use slang sparingly ("yo", "send it", "wagmi"). Energetic. 2-3 sentences max.',
-  OWL: 'You are a patient, contemplative observer. Wise, deliberate. Treat the market as a long arc. 2-3 sentences max.',
-  SAVAGE: 'You are a sharp, opinionated trader. Witty, slightly cocky, never rude. Land a clean truth. 2-3 sentences max.',
-  NERD: 'You are a quant. Lead with the statistic. State its rarity in plain numbers. 2-3 sentences max.',
-};
-
-const LANG_INSTRUCTION: Record<Lang, string> = {
-  en: 'Reply in English.',
-  zh: '请用中文（简体）回答。',
-  ja: '日本語で答えてください。',
-  ko: '한국어로 답변해 주세요.',
-};
-
-async function narrate(
-  signal: PodSignal,
-  personality: Personality,
-  lang: Lang,
-): Promise<string | null> {
-  const apiKey = process.env['NVIDIA_API_KEY'];
-  if (!apiKey) return null;
-  try {
-    const client = new OpenAI({
-      apiKey,
-      baseURL: process.env['NVIDIA_BASE_URL'] ?? 'https://integrate.api.nvidia.com/v1',
-    });
-    const result = await client.chat.completions.create({
-      model: process.env['NVIDIA_MODEL'] ?? 'meta/llama-3.3-70b-instruct',
-      messages: [
-        {
-          role: 'system',
-          content: `${PERSONALITY_PROMPT[personality]}\n${LANG_INSTRUCTION[lang]}\nNever invent numbers. Stick to the data.`,
-        },
-        {
-          role: 'user',
-          content:
-            `Asset: ${signal.asset}\nDirection: ${signal.direction}\nPOD Score: ${signal.podScore}/100\n` +
-            `Top reason: ${signal.contributions[0]?.rationale ?? signal.reasoning}\n` +
-            `Write the personality-flavored 2-3 sentence narration.`,
-        },
-      ],
-      temperature: 0.7,
-      max_tokens: 220,
-    });
-    return result.choices[0]?.message?.content?.trim() ?? null;
-  } catch {
-    return null;
-  }
-}
 
 // ── Bot setup ────────────────────────────────────────────────────────────────
 
@@ -197,7 +163,7 @@ function getHandler() {
 
   const bot = new Bot(token);
 
-  // /start
+  // /start — greet, mint an in-bot wallet, show deposit address, pick risk
   bot.command('start', async (ctx) => {
     const state = getOrCreateState(ctx);
     await ctx.reply(welcome(state.language), {
@@ -206,6 +172,37 @@ function getHandler() {
         .text('Balanced', 'risk:BALANCED')
         .text('Send it', 'risk:SEND_IT'),
     });
+
+    // Create (or fetch) this user's in-bot ValueChain wallet.
+    const opts: { username?: string; language: Lang } = { language: state.language };
+    if (ctx.from?.username) opts.username = ctx.from.username;
+    const user = await getOrCreateUser(ctx.from!.id, opts);
+    if (user?.walletAddress) {
+      await ctx.reply(
+        `Your POD wallet is ready.\n\nAddress:\n\`${user.walletAddress}\`\n\n` +
+          `This is your own wallet on the SoDEX testnet. Fund it from the SoDEX faucet to trade your own orders, or use /trade to try the shared demo wallet. Check it anytime with /wallet.`,
+        { parse_mode: 'Markdown' },
+      );
+    }
+  });
+
+  // /wallet — show the user's in-bot wallet + balance
+  bot.command('wallet', async (ctx) => {
+    const state = getOrCreateState(ctx);
+    const opts: { username?: string; language: Lang } = { language: state.language };
+    if (ctx.from?.username) opts.username = ctx.from.username;
+    const user = await getOrCreateUser(ctx.from!.id, opts);
+    if (!user?.walletAddress) {
+      await ctx.reply('Wallet storage is not configured on this deployment.');
+      return;
+    }
+    const bal = await walletUsdcBalance(user.walletAddress);
+    await ctx.reply(
+      `Your POD wallet\n\nAddress:\n\`${user.walletAddress}\`\n\n` +
+        `SoDEX testnet balance: ${bal.toFixed(2)} USDC\n` +
+        `${bal <= 0 ? 'Fund it from the SoDEX testnet faucet to place your own trades.' : 'Ready to trade — use /score then /trade.'}`,
+      { parse_mode: 'Markdown' },
+    );
   });
 
   // Risk picker
@@ -228,8 +225,35 @@ function getHandler() {
     const signal = bubbleToSignal(b);
     // signalCard text is fully controlled (no user input, balanced *bold*) — Markdown is safe here.
     await ctx.reply(signalCard(state.language, signal), { parse_mode: 'Markdown' });
-    const narration = await narrate(signal, state.personality, state.language);
+    const narration = await narrateScore(
+      {
+        asset: signal.asset,
+        podScore: signal.podScore,
+        direction: signal.direction,
+        topReason: signal.contributions[0]?.rationale ?? signal.reasoning,
+      },
+      state.personality,
+      state.language,
+    );
     if (narration) await ctx.reply(narration);
+  });
+
+  // /ask — natural-language Q&A grounded in the live POD scores
+  bot.command('ask', async (ctx) => {
+    const state = getOrCreateState(ctx);
+    const question = ctx.match?.toString().trim();
+    if (!question) {
+      await ctx.reply('Ask me about the market, e.g. "/ask is smart money accumulating BTC?"');
+      return;
+    }
+    await ctx.reply('Thinking…');
+    const bubbles = await fetchAllBubbleData();
+    const grounding = groundingFromBubbles(bubbles);
+    const answer = await askPod(question, grounding, state.language);
+    await ctx.reply(
+      answer ??
+        'I can only answer from live POD data and could not reach the model just now. Try /score BTC or /signal.',
+    );
   });
 
   // /score [SYMBOL]
