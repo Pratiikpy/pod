@@ -78,6 +78,39 @@ export async function getScoreHistory(asset: string, days = 30): Promise<History
   }
 }
 
+export interface TrackRecordStats {
+  totalScores: number;
+  anchoredOnChain: number;
+  distinctDays: number;
+  firstDate: string | null;
+}
+
+/** Aggregate stats for the public track-record page. */
+export async function getTrackRecordStats(): Promise<TrackRecordStats> {
+  const sql = db();
+  if (!sql) return { totalScores: 0, anchoredOnChain: 0, distinctDays: 0, firstDate: null };
+  try {
+    const rows = (await sql`
+      select
+        count(*)::int as total,
+        count(onchain_tx)::int as anchored,
+        count(distinct generated_at::date)::int as days,
+        min(generated_at)::date as first_date
+      from score_history
+    `) as Array<{ total: number; anchored: number; days: number; first_date: string | null }>;
+    const r = rows[0];
+    return {
+      totalScores: r?.total ?? 0,
+      anchoredOnChain: r?.anchored ?? 0,
+      distinctDays: r?.days ?? 0,
+      firstDate: r?.first_date ? new Date(r.first_date).toISOString().slice(0, 10) : null,
+    };
+  } catch (err) {
+    console.error('[db] getTrackRecordStats failed:', err);
+    return { totalScores: 0, anchoredOnChain: 0, distinctDays: 0, firstDate: null };
+  }
+}
+
 export interface OnChainReceipt {
   asset: string;
   podScore: number;
