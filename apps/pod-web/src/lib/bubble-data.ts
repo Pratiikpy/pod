@@ -1,5 +1,5 @@
 import { unstable_cache } from 'next/cache';
-import { SoSoValue, type EtfSymbol } from '@pod/sosovalue-sdk';
+import { SoSoValue, resolveSoSoValueKeys, type EtfSymbol } from '@pod/sosovalue-sdk';
 import {
   SignalEngine,
   type SignalContribution,
@@ -48,7 +48,8 @@ const ALL_SOURCES = [
   'MACRO_EVENT',
   'NEWS_SENTIMENT',
   'BTC_TREASURY',
-  'VC_FUNDING',
+  'SOCIAL_SENTIMENT',
+  'STABLECOIN_LIQUIDITY',
 ] as const;
 
 function citationFromReasoning(text: string): string {
@@ -79,12 +80,12 @@ function fallbackBubble(t: { asset: EtfSymbol; name: string; rank: number }, rea
 }
 
 async function fetchAllBubbleDataInner(): Promise<BubbleData[]> {
-  const apiKey = process.env['SOSOVALUE_API_KEY'];
-  if (!apiKey) {
+  const apiKeys = resolveSoSoValueKeys();
+  if (apiKeys.length === 0) {
     return TRACKED.map((t) => fallbackBubble(t, 'Set SOSOVALUE_API_KEY to see live signals.'));
   }
 
-  const sso = new SoSoValue({ apiKey });
+  const sso = new SoSoValue({ apiKeys });
   const engine = new SignalEngine(sso);
 
   const requests: SignalRequest[] = TRACKED.map((t) => ({

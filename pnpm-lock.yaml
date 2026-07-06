@@ -46,7 +46,7 @@ importers:
         version: 16.6.1
       drizzle-orm:
         specifier: ^0.38.3
-        version: 0.38.4(@types/react@19.2.14)(postgres@3.4.9)(react@19.2.5)
+        version: 0.38.4(@neondatabase/serverless@1.1.0)(@types/react@19.2.14)(postgres@3.4.9)(react@19.2.5)
       grammy:
         specifier: ^1.32.0
         version: 1.42.0
@@ -78,6 +78,9 @@ importers:
 
   apps/pod-web:
     dependencies:
+      '@neondatabase/serverless':
+        specifier: ^1.1.0
+        version: 1.1.0
       '@pod/signal-engine':
         specifier: workspace:*
         version: link:../../packages/signal-engine
@@ -771,6 +774,10 @@ packages:
   '@mswjs/interceptors@0.41.7':
     resolution: {integrity: sha512-D0nkS5+sx87mYpxFqASImCineYoEl9wGlUPrzkuS0ohzG8wfophLpE+I76qGJ0slLAVI19do5SI9pWJNCVf4fg==}
     engines: {node: '>=18'}
+
+  '@neondatabase/serverless@1.1.0':
+    resolution: {integrity: sha512-r3ZZhRjEcfEdKIZnoB1RusNgvHuaBRqfCzV4Gi+5A9yUX0S4HTws/ASWqt13wL4y4I+0rqsWGdA2w7EQXHi3+Q==}
+    engines: {node: '>=19.0.0'}
 
   '@next/env@15.5.15':
     resolution: {integrity: sha512-vcmyu5/MyFzN7CdqRHO3uHO44p/QPCZkuTUXroeUmhNP8bL5PHFEhik22JUazt+CDDoD6EpBYRCaS2pISL+/hg==}
@@ -2626,6 +2633,8 @@ snapshots:
       outvariant: 1.4.3
       strict-event-emitter: 0.5.1
 
+  '@neondatabase/serverless@1.1.0': {}
+
   '@next/env@15.5.15': {}
 
   '@next/swc-darwin-arm64@15.5.15':
@@ -3133,8 +3142,9 @@ snapshots:
 
   dotenv@16.6.1: {}
 
-  drizzle-orm@0.38.4(@types/react@19.2.14)(postgres@3.4.9)(react@19.2.5):
+  drizzle-orm@0.38.4(@neondatabase/serverless@1.1.0)(@types/react@19.2.14)(postgres@3.4.9)(react@19.2.5):
     optionalDependencies:
+      '@neondatabase/serverless': 1.1.0
       '@types/react': 19.2.14
       postgres: 3.4.9
       react: 19.2.5

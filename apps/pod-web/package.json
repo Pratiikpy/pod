@@ -11,6 +11,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "@pod/signal-engine": "workspace:*",
     "@pod/sodex-sdk": "workspace:*",
     "@pod/sosovalue-sdk": "workspace:*",

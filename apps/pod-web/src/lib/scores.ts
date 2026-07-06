@@ -1,63 +1,35 @@
-import { SoSoValue, type EtfSymbol } from '@pod/sosovalue-sdk';
-import { SignalEngine, type SignalDirection } from '@pod/signal-engine';
+import type { SignalDirection } from '@pod/signal-engine';
+import { fetchAllBubbleData } from './bubble-data';
 
 export interface PublicScore {
-  asset: EtfSymbol;
+  asset: string;
+  name: string;
   direction: SignalDirection;
   podScore: number;
+  compositeZ: number;
   summary: string;
+  sources: number;
   uncertain: boolean;
   generatedAt: string;
 }
 
-const ASSETS: EtfSymbol[] = ['BTC', 'ETH', 'SOL'];
-
 /**
- * Fetches public POD Scores for the homepage. Used by the (revalidating)
- * server component on the index page. Falls back to neutral placeholders
- * if SOSOVALUE_API_KEY isn't configured.
+ * Public POD Scores for all ten tracked assets. Reads the same 10-minute
+ * cached bubble fan-out the dashboard uses, so `/api/scores`, `/bubbles`, and
+ * the Telegram bot never disagree. Falls back to neutral placeholders when no
+ * SoSoValue key is configured (handled inside the cache).
  */
 export async function fetchPublicScores(): Promise<PublicScore[]> {
-  const apiKey = process.env['SOSOVALUE_API_KEY'];
-  if (!apiKey) {
-    return ASSETS.map((asset) => ({
-      asset,
-      direction: 'HOLD' as SignalDirection,
-      podScore: 50,
-      summary:
-        'API key not configured — connect SOSOVALUE_API_KEY to see live scores.',
-      uncertain: true,
-      generatedAt: new Date().toISOString(),
-    }));
-  }
-
-  const sso = new SoSoValue({ apiKey });
-  const engine = new SignalEngine(sso);
-
-  const out = await Promise.all(
-    ASSETS.map(async (asset) => {
-      try {
-        const signal = await engine.generate({ asset, riskProfile: 'BALANCED' });
-        return {
-          asset,
-          direction: signal.direction,
-          podScore: signal.podScore,
-          summary: signal.reasoning,
-          uncertain: signal.uncertain,
-          generatedAt: signal.generated_at,
-        };
-      } catch (err) {
-        console.error(`[fetchPublicScores] ${asset} failed`, err);
-        return {
-          asset,
-          direction: 'HOLD' as SignalDirection,
-          podScore: 50,
-          summary: 'Score temporarily unavailable.',
-          uncertain: true,
-          generatedAt: new Date().toISOString(),
-        };
-      }
-    }),
-  );
-  return out;
+  const bubbles = await fetchAllBubbleData();
+  return bubbles.map((b) => ({
+    asset: b.asset,
+    name: b.name,
+    direction: b.direction,
+    podScore: b.score,
+    compositeZ: Number(b.z.toFixed(3)),
+    summary: b.reasoning,
+    sources: b.contributions.filter((c) => c.weight > 0).length,
+    uncertain: b.uncertain,
+    generatedAt: b.generatedAt,
+  }));
 }
