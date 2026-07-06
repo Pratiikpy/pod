@@ -11,20 +11,28 @@ import { askPod, narrateScore, groundingFromBubbles } from '@/lib/bot/llm';
 import { getOrCreateUser } from '@/lib/bot/store';
 import { addAlert, listUserAlerts, clearUserAlerts, type AlertKind } from '@/lib/alerts';
 import { SoDEX } from '@pod/sodex-sdk';
+import { privateKeyToAccount } from 'viem/accounts';
 import type { Hex } from 'viem';
 
-/** Read an in-bot wallet's SoDEX testnet USDC balance (0 if none/unfunded). */
-async function walletUsdcBalance(address: string): Promise<number> {
+/** Read all of an in-bot wallet's SoDEX testnet balances. */
+async function walletBalances(address: string): Promise<Array<{ coin: string; total: number }>> {
   try {
     const sdk = SoDEX.publicOnly('testnet');
     const resp = (await sdk.spot.balances(address)) as {
       data?: { balances?: Array<{ coin: string; total: string }> };
     };
-    const usdc = resp.data?.balances?.find((b) => b.coin === 'vUSDC' || b.coin === 'USDC');
-    return usdc ? Number(usdc.total) : 0;
+    return (resp.data?.balances ?? [])
+      .map((b) => ({ coin: b.coin.replace(/^v/, ''), total: Number(b.total) }))
+      .filter((b) => b.total > 0);
   } catch {
-    return 0;
+    return [];
   }
+}
+
+/** USDC balance for one wallet (0 if none/unfunded). */
+async function walletUsdcBalance(address: string): Promise<number> {
+  const bals = await walletBalances(address);
+  return bals.find((b) => b.coin === 'USDC')?.total ?? 0;
 }
 
 /**
@@ -87,7 +95,7 @@ function welcome(lang: Lang): string {
 
 function help(lang: Lang): string {
   return {
-    en: `Commands:\n/start /signal /score /ask /alert /wallet /trade /lang /help\n\n/ask <question> — ask about the market in plain English\n/alert BTC above 70 — ping me when a score crosses\n/wallet — your in-bot wallet + balance`,
+    en: `Commands:\n/start /signal /score /ask /alert /wallet /portfolio /trade /lang /help\n\n/ask <question> — ask about the market in plain English\n/alert BTC above 70 — ping me when a score crosses\n/wallet — your in-bot wallet + balance\n/portfolio — demo trading wallet holdings`,
     zh: `命令：\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <问题> — 用自然语言询问市场\n/wallet — 你的机器人钱包和余额`,
     ja: `コマンド：\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <質問> — 市場について質問\n/wallet — あなたのウォレットと残高`,
     ko: `명령어:\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <질문> — 시장에 대해 질문\n/wallet — 내 지갑 및 잔액`,
@@ -185,6 +193,28 @@ function getHandler() {
         { parse_mode: 'Markdown' },
       );
     }
+  });
+
+  // /portfolio — holdings in the demo trading wallet (where /trade executes)
+  bot.command('portfolio', async (ctx) => {
+    const pk = process.env['SODEX_PRIVATE_KEY'] as Hex | undefined;
+    if (!pk) {
+      await ctx.reply('Trading is not configured on this deployment.');
+      return;
+    }
+    const addr = privateKeyToAccount(pk).address;
+    const bals = await walletBalances(addr);
+    if (bals.length === 0) {
+      await ctx.reply('The demo trading wallet holds nothing right now.');
+      return;
+    }
+    const lines = bals
+      .sort((a, b) => b.total - a.total)
+      .map((b) => `  ${b.coin}: ${b.total.toLocaleString(undefined, { maximumFractionDigits: 4 })}`);
+    await ctx.reply(
+      `POD demo trading wallet (shared testnet)\n\`${addr}\`\n\nHoldings:\n${lines.join('\n')}\n\nThis is where /score → Buy and /trade place orders.`,
+      { parse_mode: 'Markdown' },
+    );
   });
 
   // /wallet — show the user's in-bot wallet + balance
