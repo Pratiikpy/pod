@@ -9,6 +9,7 @@ import { tradeOnSignal } from '@/lib/trading';
 import { getBubble, fetchAllBubbleData, type BubbleData } from '@/lib/bubble-data';
 import { askPod, narrateScore, groundingFromBubbles } from '@/lib/bot/llm';
 import { getOrCreateUser } from '@/lib/bot/store';
+import { addAlert, listUserAlerts, clearUserAlerts, type AlertKind } from '@/lib/alerts';
 import { SoDEX } from '@pod/sodex-sdk';
 import type { Hex } from 'viem';
 
@@ -86,7 +87,7 @@ function welcome(lang: Lang): string {
 
 function help(lang: Lang): string {
   return {
-    en: `Commands:\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <question> — ask about the market in plain English\n/wallet — your in-bot wallet + balance`,
+    en: `Commands:\n/start /signal /score /ask /alert /wallet /trade /lang /help\n\n/ask <question> — ask about the market in plain English\n/alert BTC above 70 — ping me when a score crosses\n/wallet — your in-bot wallet + balance`,
     zh: `命令：\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <问题> — 用自然语言询问市场\n/wallet — 你的机器人钱包和余额`,
     ja: `コマンド：\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <質問> — 市場について質問\n/wallet — あなたのウォレットと残高`,
     ko: `명령어:\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <질문> — 시장에 대해 질문\n/wallet — 내 지갑 및 잔액`,
@@ -254,6 +255,42 @@ function getHandler() {
       answer ??
         'I can only answer from live POD data and could not reach the model just now. Try /score BTC or /signal.',
     );
+  });
+
+  // /alert <ASSET> <above|below> <N> — subscribe to a score threshold
+  bot.command('alert', async (ctx) => {
+    const parts = (ctx.match?.toString().trim() ?? '').split(/\s+/).filter(Boolean);
+    const asset = parts[0]?.toUpperCase();
+    const dir = parts[1]?.toLowerCase();
+    const n = Number(parts[2]);
+    const validAsset = asset && SUPPORTED_ASSETS.concat(['XRP', 'DOGE', 'AVAX', 'LINK', 'LTC', 'DOT', 'HBAR'] as EtfSymbol[]).includes(asset as EtfSymbol);
+    if (!validAsset || (dir !== 'above' && dir !== 'below') || !Number.isFinite(n) || n < 0 || n > 100) {
+      await ctx.reply('Usage: /alert BTC above 70  (or "below 40"). I will ping you when the POD Score crosses it.');
+      return;
+    }
+    const kind: AlertKind = dir === 'above' ? 'score_above' : 'score_below';
+    const ok = await addAlert(ctx.from!.id, asset!, kind, n);
+    await ctx.reply(
+      ok
+        ? `Alert set: I'll ping you when ${asset} POD Score goes ${dir} ${n}. See all with /alerts.`
+        : 'Could not save the alert (storage not configured).',
+    );
+  });
+
+  // /alerts — list active alerts; "/alerts clear" to remove them
+  bot.command('alerts', async (ctx) => {
+    if (ctx.match?.toString().trim().toLowerCase() === 'clear') {
+      const removed = await clearUserAlerts(ctx.from!.id);
+      await ctx.reply(removed > 0 ? `Cleared ${removed} alert${removed === 1 ? '' : 's'}.` : 'No active alerts to clear.');
+      return;
+    }
+    const alerts = await listUserAlerts(ctx.from!.id);
+    if (alerts.length === 0) {
+      await ctx.reply('No active alerts. Set one with:\n/alert BTC above 70');
+      return;
+    }
+    const lines = alerts.map((a) => `• ${a.asset} ${a.kind === 'score_above' ? 'above' : 'below'} ${a.threshold}`);
+    await ctx.reply(`Your alerts:\n${lines.join('\n')}\n\nClear all with /alerts clear.`);
   });
 
   // /score [SYMBOL]
