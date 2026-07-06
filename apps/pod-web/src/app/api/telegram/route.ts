@@ -5,7 +5,7 @@ import {
   type PodSignal,
   type RiskProfile,
 } from '@pod/signal-engine';
-import { tradeOnSignal } from '@/lib/trading';
+import { tradeOnSignal, placeLimitLadder, scheduleDeadman } from '@/lib/trading';
 import { getBubble, fetchAllBubbleData, type BubbleData } from '@/lib/bubble-data';
 import { askPod, narrateScore, groundingFromBubbles } from '@/lib/bot/llm';
 import { getOrCreateUser, getWalletKey } from '@/lib/bot/store';
@@ -96,7 +96,7 @@ function welcome(lang: Lang): string {
 
 function help(lang: Lang): string {
   return {
-    en: `Commands:\n/start /signal /score /ask /alert /watch /dca /wallet /portfolio /trade /lang /help\n\n/ask <question> — ask the market in plain English\n/alert BTC above 70 — ping when a score crosses\n/watch BTC ETH — add to your daily digest\n/dca BTC 5 — recurring $5 buy\n/wallet · /portfolio — wallet + holdings\n/ref — referral link · /webhook — event URL`,
+    en: `Commands:\n/start /signal /score /ask /alert /watch /dca /wallet /portfolio /trade /lang /help\n\n/ask <question> — ask the market in plain English\n/alert BTC above 70 — ping when a score crosses\n/watch BTC ETH — add to your daily digest\n/dca BTC 5 — recurring $5 buy\n/wallet · /portfolio — wallet + holdings\n/ladder BTC 20 — limit-buy ladder · /safety — dead-man switch\n/ref — referral link · /webhook — event URL`,
     zh: `命令：\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <问题> — 用自然语言询问市场\n/wallet — 你的机器人钱包和余额`,
     ja: `コマンド：\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <質問> — 市場について質問\n/wallet — あなたのウォレットと残高`,
     ko: `명령어:\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <질문> — 시장에 대해 질문\n/wallet — 내 지갑 및 잔액`,
@@ -227,6 +227,38 @@ function getHandler() {
       return;
     }
     await ctx.reply(`Your private key (keep it secret):\n\`${key}\``, { parse_mode: 'Markdown' });
+  });
+
+  // /ladder <COIN> <USD> — place a limit-buy ladder stepped below price (F39)
+  bot.command('ladder', async (ctx) => {
+    const parts = (ctx.match?.toString().trim() ?? '').split(/\s+/).filter(Boolean);
+    const asset = parts[0]?.toUpperCase();
+    const total = Number(parts[1] ?? 20);
+    const pk = process.env['SODEX_PRIVATE_KEY'] as Hex | undefined;
+    if (!pk) return void (await ctx.reply('Trading is not configured on this deployment.'));
+    if (!asset || !SUPPORTED_ASSETS.includes(asset as EtfSymbol)) {
+      await ctx.reply('Usage: /ladder BTC 20 — places 4 limit buys stepped 1–4% below price (demo wallet).');
+      return;
+    }
+    await ctx.reply(`Placing a ${asset} limit ladder on the SoDEX testnet…`);
+    const r = await placeLimitLadder({ privateKey: pk, asset, totalUsd: total });
+    if (!r.attempted) await ctx.reply(`No ladder placed. ${r.error ?? r.reason}`);
+    else if (r.error) await ctx.reply(`Ladder not placed. ${r.error}`);
+    else await ctx.reply(`Ladder submitted for ${asset}.\n${JSON.stringify(r.result).slice(0, 400)}`);
+  });
+
+  // /safety <minutes> — dead-man switch: auto-cancel resting orders (F19)
+  bot.command('safety', async (ctx) => {
+    const mins = Math.max(1, Number(ctx.match?.toString().trim() || 60));
+    const pk = process.env['SODEX_PRIVATE_KEY'] as Hex | undefined;
+    if (!pk) return void (await ctx.reply('Trading is not configured on this deployment.'));
+    await ctx.reply(`Arming the dead-man switch: cancel-all in ${mins} min…`);
+    const r = await scheduleDeadman({ privateKey: pk, minutes: mins });
+    await ctx.reply(
+      r.attempted
+        ? `Dead-man switch armed. If nothing changes, all resting orders cancel in ${mins} min.`
+        : `Could not arm it. ${r.error}`,
+    );
   });
 
   // /portfolio — holdings in the demo trading wallet (where /trade executes)
