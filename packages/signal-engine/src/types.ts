@@ -43,6 +43,8 @@ export const SignalSourceSchema = z.enum([
   'NEWS_SENTIMENT',
   'BTC_TREASURY',
   'VC_FUNDING',
+  'SOCIAL_SENTIMENT',
+  'STABLECOIN_LIQUIDITY',
   'PERP_FUNDING',
   'SSI_INDEX',
 ]);

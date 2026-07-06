@@ -1,16 +1,20 @@
 import type { SoSoValue } from '@pod/sosovalue-sdk';
 import type { SignalContribution } from '../types.js';
+import { clamp } from '../stats.js';
 
 /**
- * BTC Treasury signal — detects smart-money corporate accumulation.
- * When MicroStrategy / Tesla / Marathon / Coinbase add to BTC holdings,
- * it's a positive structural signal even if short-term flow data is mixed.
+ * BTC Treasury signal — corporate accumulation as a structural bull signal.
+ * Sums BTC acquired across the largest public treasuries (MSTR, MARA,
+ * Metaplanet, …) over the last 30 days. Heavy corporate buying is smart-money
+ * confirmation even when short-term ETF flow is mixed. One-sided: strong
+ * accumulation is bullish, its absence is neutral (weight 0), never bearish.
+ *
+ * Applies to BTC only (the dataset is BTC-centric).
  */
-export async function treasurySignal(
-  sso: SoSoValue,
-  asset: string,
-): Promise<SignalContribution> {
-  // Only meaningful for BTC right now (treasury data is BTC-centric).
+const TOP_N = 5; // sample the largest holders to stay under the rate limit
+const LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
+
+export async function treasurySignal(sso: SoSoValue, asset: string): Promise<SignalContribution> {
   if (asset !== 'BTC') {
     return {
       source: 'BTC_TREASURY',
@@ -21,26 +25,49 @@ export async function treasurySignal(
     };
   }
 
-  const recent = await sso.treasury.recentAcquisitions({ days: 30, limit: 50 });
+  const holders = await sso.treasury.list({ pageSize: 30 });
+  const top = holders.slice(0, TOP_N);
+  const cutoff = Date.now() - LOOKBACK_MS;
 
-  if (recent.length === 0) {
+  let totalBtc = 0;
+  let totalUsd = 0;
+  const contributors: string[] = [];
+
+  const histories = await Promise.all(
+    top.map((h) => sso.treasury.purchaseHistory(h.ticker, { limit: 12 }).catch(() => [])),
+  );
+
+  top.forEach((h, i) => {
+    let added = 0;
+    for (const row of histories[i] ?? []) {
+      const t = new Date(`${row.date}T00:00:00Z`).getTime();
+      if (!Number.isNaN(t) && t >= cutoff) {
+        added += row.btcAcquired;
+        totalUsd += row.acqCostUsd;
+      }
+    }
+    if (added > 0) {
+      totalBtc += added;
+      contributors.push(h.name ?? h.ticker);
+    }
+  });
+
+  if (totalBtc <= 0) {
     return {
       source: 'BTC_TREASURY',
-      weight: 0.1,
+      weight: 0,
       zScore: 0,
       confidence: 50,
-      rationale: 'No corporate BTC acquisitions in the last 30 days.',
-      citation: 'SoSoValue /treasury/acquisitions',
+      rationale: 'No corporate BTC accumulation among top treasuries in the last 30 days.',
+      citation: 'SoSoValue /btc-treasuries',
+      data: { totalBtc: 0 },
     };
   }
 
-  const totalBtc = recent.reduce((acc, r) => acc + r.btc_amount, 0);
-  const totalUsd = recent.reduce((acc, r) => acc + (r.usd_amount ?? 0), 0);
-
-  // Heuristic: > 5,000 BTC of corporate buying in 30d is a strong signal.
-  // Scale to a z-score-ish range.
-  const z = Math.min(2.5, Math.max(-2.5, (totalBtc - 2500) / 2500));
+  // 3,000 BTC/30d ≈ +1σ; 7,500 ≈ +2.5σ. One-sided (floor at 0).
+  const z = clamp(totalBtc / 3000, 0, 2.5);
   const confidence = Math.round((1 / (1 + Math.exp(-z))) * 100);
+  const who = contributors.slice(0, 3).join(', ');
 
   return {
     source: 'BTC_TREASURY',
@@ -48,9 +75,10 @@ export async function treasurySignal(
     zScore: z,
     confidence,
     rationale:
-      `Corporate treasuries added ${totalBtc.toFixed(0)} BTC (~$${(totalUsd / 1e9).toFixed(2)}B) ` +
-      `in the last 30 days — ${z > 1 ? 'strong' : z > 0 ? 'mild' : 'limited'} smart-money confirmation.`,
-    citation: 'SoSoValue /treasury/acquisitions',
-    data: { totalBtc, totalUsd, acquisitionCount: recent.length },
+      `Corporate treasuries added ${Math.round(totalBtc).toLocaleString()} BTC` +
+      `${totalUsd > 0 ? ` (~$${(totalUsd / 1e9).toFixed(2)}B)` : ''} in the last 30 days` +
+      `${who ? ` — led by ${who}` : ''} (${z >= 1 ? 'strong' : 'mild'} accumulation).`,
+    citation: 'SoSoValue /btc-treasuries/{ticker}/purchase-history',
+    data: { totalBtc, totalUsd, contributors },
   };
 }

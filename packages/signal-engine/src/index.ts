@@ -6,6 +6,8 @@ export { macroEventSignal } from './sources/macro-event.js';
 export { newsSentimentSignal } from './sources/news-sentiment.js';
 export { treasurySignal } from './sources/treasury.js';
 export { fundraisingSignal } from './sources/fundraising.js';
+export { socialSentimentSignal } from './sources/social-sentiment.js';
+export { stablecoinLiquiditySignal } from './sources/stablecoin-liquidity.js';
 export {
   backtest,
   type BacktestRow,

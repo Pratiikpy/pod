@@ -12,15 +12,25 @@ import { macroEventSignal } from './sources/macro-event.js';
 import { newsSentimentSignal } from './sources/news-sentiment.js';
 import { treasurySignal } from './sources/treasury.js';
 import { fundraisingSignal } from './sources/fundraising.js';
+import { socialSentimentSignal } from './sources/social-sentiment.js';
+import { stablecoinLiquiditySignal } from './sources/stablecoin-liquidity.js';
 
-type SourceKey = 'ETF_FLOW' | 'MACRO_EVENT' | 'NEWS_SENTIMENT' | 'BTC_TREASURY' | 'VC_FUNDING';
+type SourceKey =
+  | 'ETF_FLOW'
+  | 'MACRO_EVENT'
+  | 'NEWS_SENTIMENT'
+  | 'BTC_TREASURY'
+  | 'VC_FUNDING'
+  | 'SOCIAL_SENTIMENT'
+  | 'STABLECOIN_LIQUIDITY';
 
 const DEFAULT_SOURCES: ReadonlyArray<SourceKey> = [
   'ETF_FLOW',
   'MACRO_EVENT',
   'NEWS_SENTIMENT',
   'BTC_TREASURY',
-  'VC_FUNDING',
+  'SOCIAL_SENTIMENT',
+  'STABLECOIN_LIQUIDITY',
 ];
 
 export interface SignalRequest {
@@ -49,8 +59,7 @@ export class SignalEngine {
   constructor(private readonly sso: SoSoValue) {}
 
   async generate(req: SignalRequest): Promise<PodSignal> {
-    const sources =
-      req.sources ?? (['ETF_FLOW', 'MACRO_EVENT', 'NEWS_SENTIMENT', 'BTC_TREASURY', 'VC_FUNDING'] as const);
+    const sources = req.sources ?? DEFAULT_SOURCES;
 
     // Run sources in parallel, tolerate failures gracefully.
     const tasks: Array<Promise<SignalContribution | null>> = [];
@@ -69,6 +78,12 @@ export class SignalEngine {
     if (sources.includes('VC_FUNDING')) {
       tasks.push(safe(() => fundraisingSignal(this.sso)));
     }
+    if (sources.includes('SOCIAL_SENTIMENT')) {
+      tasks.push(safe(() => socialSentimentSignal(req.asset)));
+    }
+    if (sources.includes('STABLECOIN_LIQUIDITY')) {
+      tasks.push(safe(() => stablecoinLiquiditySignal(this.sso)));
+    }
 
     const results = (await Promise.all(tasks)).filter((c): c is SignalContribution => c !== null);
 
@@ -77,7 +92,8 @@ export class SignalEngine {
     );
     const podScore = Math.round((1 / (1 + Math.exp(-compositeZ))) * 100);
     const direction = scoreToDirection(compositeZ);
-    const uncertain = results.length < 3 || Math.abs(compositeZ) < 0.3;
+    const realCount = results.filter((c) => c.weight > 0).length;
+    const uncertain = realCount < 3 || Math.abs(compositeZ) < 0.3;
 
     const targetBasket = buildTargetBasket(req.asset, req.riskProfile, compositeZ);
     const reasoning = composeReasoning(req.asset, direction, podScore, compositeZ, results);
@@ -124,6 +140,9 @@ export class SignalEngine {
     if (wanted.has('VC_FUNDING')) {
       globalTasks.push(safe(() => fundraisingSignal(this.sso)));
     }
+    if (wanted.has('STABLECOIN_LIQUIDITY')) {
+      globalTasks.push(safe(() => stablecoinLiquiditySignal(this.sso)));
+    }
     const globals = (await Promise.all(globalTasks)).filter(
       (c): c is SignalContribution => c !== null,
     );
@@ -143,6 +162,9 @@ export class SignalEngine {
       if (sources.includes('BTC_TREASURY')) {
         perAssetTasks.push(safe(() => treasurySignal(this.sso, req.asset)));
       }
+      if (sources.includes('SOCIAL_SENTIMENT')) {
+        perAssetTasks.push(safe(() => socialSentimentSignal(req.asset)));
+      }
 
       const perAsset = (await Promise.all(perAssetTasks)).filter(
         (c): c is SignalContribution => c !== null,
@@ -159,7 +181,8 @@ export class SignalEngine {
       );
       const podScore = Math.round((1 / (1 + Math.exp(-compositeZ))) * 100);
       const direction = scoreToDirection(compositeZ);
-      const uncertain = contributions.length < 3 || Math.abs(compositeZ) < 0.3;
+      const realCount = contributions.filter((c) => c.weight > 0).length;
+      const uncertain = realCount < 3 || Math.abs(compositeZ) < 0.3;
       const targetBasket = buildTargetBasket(req.asset, req.riskProfile, compositeZ);
       const reasoning = composeReasoning(req.asset, direction, podScore, compositeZ, contributions);
 
