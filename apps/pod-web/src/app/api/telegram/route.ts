@@ -10,7 +10,7 @@ import { getBubble, fetchAllBubbleData, type BubbleData } from '@/lib/bubble-dat
 import { askPod, narrateScore, groundingFromBubbles } from '@/lib/bot/llm';
 import { getOrCreateUser } from '@/lib/bot/store';
 import { addAlert, listUserAlerts, clearUserAlerts, type AlertKind } from '@/lib/alerts';
-import { addToWatchlist, getWatchlist, addDca, listDca, clearDca, recordReferral, countReferrals } from '@/lib/user-features';
+import { addToWatchlist, getWatchlist, addDca, listDca, clearDca, recordReferral, countReferrals, setWebhookUrl } from '@/lib/user-features';
 import { SoDEX } from '@pod/sodex-sdk';
 import { privateKeyToAccount } from 'viem/accounts';
 import type { Hex } from 'viem';
@@ -96,7 +96,7 @@ function welcome(lang: Lang): string {
 
 function help(lang: Lang): string {
   return {
-    en: `Commands:\n/start /signal /score /ask /alert /watch /dca /wallet /portfolio /trade /lang /help\n\n/ask <question> — ask the market in plain English\n/alert BTC above 70 — ping when a score crosses\n/watch BTC ETH — add to your daily digest\n/dca BTC 5 — recurring $5 buy\n/wallet · /portfolio — wallet + holdings`,
+    en: `Commands:\n/start /signal /score /ask /alert /watch /dca /wallet /portfolio /trade /lang /help\n\n/ask <question> — ask the market in plain English\n/alert BTC above 70 — ping when a score crosses\n/watch BTC ETH — add to your daily digest\n/dca BTC 5 — recurring $5 buy\n/wallet · /portfolio — wallet + holdings\n/ref — referral link · /webhook — event URL`,
     zh: `命令：\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <问题> — 用自然语言询问市场\n/wallet — 你的机器人钱包和余额`,
     ja: `コマンド：\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <質問> — 市場について質問\n/wallet — あなたのウォレットと残高`,
     ko: `명령어:\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <질문> — 시장에 대해 질문\n/wallet — 내 지갑 및 잔액`,
@@ -382,6 +382,22 @@ function getHandler() {
         ? `DCA set: $${amount} ${asset} every 24h (demo wallet). See /dca list.`
         : 'Could not save the DCA schedule.',
     );
+  });
+
+  // /webhook <url> — receive alert events on your own URL ("/webhook off" to clear)
+  bot.command('webhook', async (ctx) => {
+    const arg = ctx.match?.toString().trim() ?? '';
+    if (arg.toLowerCase() === 'off' || arg === '') {
+      await setWebhookUrl(ctx.from!.id, null);
+      await ctx.reply('Webhook cleared. Set one with /webhook https://your-url.com/hook');
+      return;
+    }
+    if (!/^https:\/\/.+/.test(arg)) {
+      await ctx.reply('Give an https URL: /webhook https://your-url.com/hook');
+      return;
+    }
+    await setWebhookUrl(ctx.from!.id, arg);
+    await ctx.reply('Webhook set. Your alert events will POST there as JSON too.');
   });
 
   // /ref — your referral link + count

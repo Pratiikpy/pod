@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { fetchAllBubbleData } from '@/lib/bubble-data';
 import { getActiveAlerts, markFired, shouldFire } from '@/lib/alerts';
+import { getWebhookUrl } from '@/lib/user-features';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
@@ -46,6 +47,29 @@ export async function GET(request: Request) {
         console.error('[check-alerts] send failed:', err);
       }
     }
+    // Also POST the event to the user's webhook, if they registered one (F31).
+    const hook = await getWebhookUrl(a.telegramId);
+    if (hook) {
+      try {
+        await fetch(hook, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            event: 'pod.alert',
+            asset: a.asset,
+            kind: a.kind,
+            threshold: a.threshold,
+            podScore: b.score,
+            direction: b.direction,
+            reasoning: b.reasoning,
+            at: new Date().toISOString(),
+          }),
+        });
+      } catch (err) {
+        console.error('[check-alerts] webhook post failed:', err);
+      }
+    }
+
     await markFired(a.id, b.score);
     fired++;
   }

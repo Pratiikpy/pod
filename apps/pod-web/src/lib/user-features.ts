@@ -104,6 +104,27 @@ export async function markDcaRun(id: number): Promise<void> {
   await sql`update dca_schedules set last_run_at = now() where id = ${id}`;
 }
 
+// ── Webhooks (F31) ───────────────────────────────────────────────────────────
+
+export async function setWebhookUrl(telegramId: number, url: string | null): Promise<boolean> {
+  const sql = db();
+  if (!sql) return false;
+  try {
+    await sql`update bot_users set webhook_url = ${url}, updated_at = now() where telegram_id = ${telegramId}`;
+    return true;
+  } catch (err) {
+    console.error('[webhook] set failed:', err);
+    return false;
+  }
+}
+
+export async function getWebhookUrl(telegramId: number): Promise<string | null> {
+  const sql = db();
+  if (!sql) return null;
+  const rows = (await sql`select webhook_url from bot_users where telegram_id = ${telegramId}`) as Array<{ webhook_url: string | null }>;
+  return rows[0]?.webhook_url ?? null;
+}
+
 // ── Referrals (F32–34) ───────────────────────────────────────────────────────
 
 /** Record that `referredId` joined via `referrerId`. No-op on self/duplicate. */
