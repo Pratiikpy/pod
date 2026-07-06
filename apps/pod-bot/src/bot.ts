@@ -1,3 +1,5 @@
+// LEGACY — the live bot is apps/pod-web/src/app/api/telegram/route.ts (webhook). This
+// standalone grammY bot predates it and is kept only for its unit tests.
 import { Bot, InlineKeyboard, type Context } from 'grammy';
 import { SoSoValue, type EtfSymbol } from '@pod/sosovalue-sdk';
 import { SignalEngine, type RiskProfile } from '@pod/signal-engine';

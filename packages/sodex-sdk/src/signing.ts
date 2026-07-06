@@ -26,7 +26,9 @@ export type SigningDomain = 'spot' | 'perps';
 
 const DOMAIN_NAME: Record<SigningDomain, string> = {
   spot: 'spot',
-  perps: 'perps',
+  // SoDEX's EIP-712 domain for perps is "futures", not "perps" — signing with
+  // the wrong name makes the gateway reject every perps write.
+  perps: 'futures',
 };
 
 export interface ActionPayload<T = unknown> {
