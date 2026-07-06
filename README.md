@@ -6,7 +6,7 @@ POD reads the same crypto ETF flow data that institutional desks watch every mor
 
 **▶ Watch the 2-minute demo:** https://youtu.be/cn1l-CzNZhQ — the full web tour plus the Telegram signal-to-execution flow (a live SoDEX testnet order).
 
-[![POD — 2-minute demo](https://img.youtube.com/vi/cn1l-CzNZhQ/maxresdefault.jpg)](https://youtu.be/cn1l-CzNZhQ)
+[![POD — 2-minute demo](https://img.youtube.com/vi/cn1l-CzNZhQ/hq720.jpg)](https://youtu.be/cn1l-CzNZhQ)
 
 **Live**
 
