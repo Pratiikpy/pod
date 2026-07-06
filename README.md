@@ -1,240 +1,262 @@
 # POD
 
-*Institutional ETF-flow scores for crypto — on a web dashboard and in Telegram.*
+*Institutional ETF-flow scores for crypto — a signal-to-execution platform on a web dashboard and in Telegram.*
 
-POD reads the same crypto ETF flow data that institutional desks watch every morning, turns it into a single score from 0 to 100 for ten major coins, and explains the reasoning in plain English. You can read the scores on a web dashboard or get them in Telegram. From Telegram you can also place a test trade based on a score.
+POD reads the same crypto ETF flow data that institutional desks watch every morning, fuses it with five other institutional signals into a single score from 0 to 100 for ten major coins, and explains the reasoning in plain English with every number cited. You read the scores on a web dashboard, ask about them in a Telegram bot, and act on them in one tap — a market order on the SoDEX testnet, or a take-profit, DCA schedule, or limit ladder. Every score is hash-anchored on-chain so it can be verified after the fact.
 
 **Live**
 
-| | |
+| Surface | URL |
 |---|---|
 | Web — bubble dashboard | https://pod-app-phi.vercel.app/bubbles |
-| Web — how scoring works | https://pod-app-phi.vercel.app/how-it-works |
+| Web — leaderboard | https://pod-app-phi.vercel.app/leaderboard |
+| Web — ETF flow table | https://pod-app-phi.vercel.app/flows |
+| Web — SSI index co-pilot | https://pod-app-phi.vercel.app/ssi |
+| Web — market intel | https://pod-app-phi.vercel.app/intel |
 | Web — per-coin detail | https://pod-app-phi.vercel.app/asset/BTC |
+| Web — how scoring works | https://pod-app-phi.vercel.app/how-it-works |
+| Web — track record | https://pod-app-phi.vercel.app/track-record |
+| Web — developer API | https://pod-app-phi.vercel.app/developers |
+| Web — connect / QR | https://pod-app-phi.vercel.app/connect |
 | Telegram bot | https://t.me/podttest_bot |
 | Public scores API (JSON) | https://pod-app-phi.vercel.app/api/scores |
+| MCP server (agent tools) | https://pod-app-phi.vercel.app/api/mcp |
 
-Built with the SoSoValue API, the SoDEX trading API, and ValueChain (an EVM-compatible chain). Made for the SoSoValue Buildathon.
+Built with the SoSoValue API, the SoDEX trading API, ValueChain (an EVM-compatible L1), CoinGecko, and the 0G AI model. Made for the SoSoValue Buildathon.
 
 ---
 
 ## What problem this solves
 
-When a spot Bitcoin or Ethereum ETF takes in or loses hundreds of millions of dollars in a day, that says something about how serious money is positioned. A research desk at a fund watches this every morning. Most retail traders never see it, or see it too late, or do not know how to read it.
+When a spot Bitcoin or Ethereum ETF takes in or loses hundreds of millions of dollars in a day, that says something about how serious money is positioned. A research desk at a fund watches this every morning. Most retail traders never see it, see it too late, or don't know how to read it.
 
 POD does three things:
 
-1. **Reads the data** — pulls ETF flows, macro events, news, corporate Bitcoin holdings, and venture funding from SoSoValue.
-2. **Scores it** — combines those five inputs into one POD Score per coin, with a written explanation that points at the exact numbers behind it.
-3. **Lets you act on it** — the same scores show up in a Telegram bot, where you can place a test trade on SoDEX in a couple of taps.
+1. **Reads the data** — ETF flows, macro calendar, coin-tagged news, corporate Bitcoin accumulation, stablecoin liquidity, and social sentiment, from SoSoValue and CoinGecko.
+2. **Scores it** — a documented weighted z-score across those six sources, one POD Score per coin, with a written explanation that points at the exact numbers behind it, and an honest low-confidence flag.
+3. **Lets you act on it** — the same scores show up in a Telegram bot with an auto-generated in-bot wallet, one-tap orders on SoDEX, take-profit/stop-loss, DCA, alerts, and a shareable everything.
 
-The buildathon's theme is "a one-person on-chain finance business." POD is the signal-to-execution piece of that: data in, a clear call, and a way to act on it — running with no team and no app to install.
-
----
-
-## Who it is for
-
-- A crypto trader who wants the institutional read on the ten coins that have spot ETFs, without paying for a Bloomberg terminal.
-- Someone who lives in their group chats and would rather get a signal in Telegram than open another website.
-- A builder who wants the scores as a clean JSON feed — `GET /api/scores` returns everything.
+The buildathon's theme is "a one-person on-chain finance business." POD is the signal-to-execution piece of that: data in, a clear call, a way to act on it, and on-chain proof — running with no team and no app to install.
 
 ---
 
 ## How a POD Score is built
 
-Each of the five sources returns two things: a **z-score** (how unusual today's reading is compared to its recent history) and a **weight** (how much that source counts). POD takes the weighted average of the z-scores and maps it to a 0–100 number through a logistic curve.
+Each source returns a **z-score** (how unusual today's reading is versus its recent history) and a **weight** (how much it counts). POD takes the weighted average of the z-scores and maps it to a 0–100 number through a logistic curve.
 
 ```
 compositeZ = sum(z_i * w_i) / sum(w_i)
 podScore   = round(100 / (1 + e^(-compositeZ)))
 ```
 
-A composite of 0 maps to a score of 50 (neutral). +1.0 maps to about 73. -1.5 maps to about 18.
+A composite of 0 maps to a score of 50 (neutral). +1.0 maps to about 73. −1.5 maps to about 18.
 
 | Source | Weight | What it measures |
 |---|---|---|
-| ETF flow | 40% | Daily net inflow or outflow on spot crypto ETFs, compared with the trailing 30-day average and standard deviation. |
-| Macro events | 20% | Whether a major macro report (FOMC, CPI, jobs) is scheduled in the next 48 hours. If one is, the score leans defensive. |
-| News sentiment | 15% | Recent featured news for the coin, scored for tone. Older news counts less. |
-| BTC treasuries | 20% | How fast public companies have been buying Bitcoin in the last 30 days. Applies to BTC; passes through zero for other coins. |
-| VC funding | 5% | How much venture money went into crypto in the last 30 days versus the 30 days before. A slow, structural signal. |
+| ETF flow | 0.30 | Daily net inflow/outflow on spot crypto ETFs, z-scored against the trailing 30-day distribution. |
+| Macro events | 0.15 | A tier-1 macro release (CPI, FOMC, jobs) in the next 48h leans the score defensive; silent otherwise. |
+| News sentiment | 0.15 | Recency-weighted tone of coin-tagged SoSoValue news over the last few days. |
+| BTC treasuries | 0.10 | 30-day corporate BTC accumulation across the largest public holders. BTC only. |
+| Stablecoin liquidity | 0.10 | Z-score of the change in total stablecoin supply — the "dry powder" tide. |
+| Social sentiment | 0.07 | CoinGecko per-coin crowd vote — the fast retail counterweight to the slow institutional sources. |
 
-The full method is documented on the site at [`/how-it-works`](https://pod-app-phi.vercel.app/how-it-works) — nothing is hidden behind a model.
+Weights are normalised by their sum, so a source with no data contributes nothing rather than dragging the score to neutral. A score is marked **low confidence** when fewer than three sources returned a weighted contribution, or when the composite is too close to zero to act on. When a source is rate-limited or empty, it contributes nothing and the explanation says so — POD never invents data. Full method: [`/how-it-works`](https://pod-app-phi.vercel.app/how-it-works).
 
-A score is marked **low confidence** when fewer than three sources returned data, or when the composite is too close to zero to act on. When the SoSoValue free tier rate-limits a source, that source contributes nothing for that run, and the composite falls back to the rest. POD never makes up data — if a source is missing, the explanation says so.
+![POD bubble dashboard](docs/images/bubbles-live-wave0.png)
 
 ---
 
-## The interfaces
+## The web surfaces
 
-### Web — bubble dashboard
+- **Bubbles** (`/bubbles`) — ten coins, ten bubbles. Colour is the score (red defensive, lime conviction), size is rank, pulse is how unusual the flow is. Click for a drawer with the full reasoning and per-source breakdown. Responsive; mobile bottom-sheet; keyboard/screen-reader list; respects reduce-motion.
+- **Leaderboard** (`/leaderboard`) — all ten ranked by score with the one-line why.
+- **ETF flows** (`/flows`) — a Farside-style table of daily per-asset net creations/redemptions, green in / red out, with a 7-day net column.
+- **SSI co-pilot** (`/ssi`) — SoSoValue's thirteen SSI index baskets ranked by momentum with their ROI ladder, the ones tradable on SoDEX flagged, and the featured basket's constituents.
+- **Market intel** (`/intel`) — sector rotation, token-unlock radar, cycle position (down-from-ATH / up-from-cycle-low), crypto-equity sectors, and a corporate BTC-buy feed.
+- **Per-coin** (`/asset/[symbol]`) — score gauge, reasoning, every source contribution with its citation, target basket, real score trace, and an **on-chain receipt** (the reasoning hash + the ValueChain tx that anchored it). Each page ships a shareable OG card.
+- **Track record** (`/track-record`) — how many scores are recorded and anchored on-chain; honest hit-rate accrues over time, no cherry-picking.
+- **Developers** (`/developers`) + **Connect** (`/connect`) — the open API, a scannable QR into the bot, deep links, and an embeddable live score badge.
 
-Ten coins, ten bubbles. Colour is the POD Score (red is defensive, lime is conviction). Size is market rank. Click any bubble and a drawer opens with the score, the plain-English reasoning, and a per-source breakdown showing each source's z-score, weight, and one-line rationale. From the drawer you can open the full per-coin page or jump to Telegram.
+![Leaderboard](docs/images/leaderboard-wave2.png)
+![Per-coin detail with on-chain receipt](docs/images/asset-btc-wave2.png)
+![Market intel](docs/images/intel-f7f9.png)
 
-The dashboard works on a phone — the drawer becomes a bottom sheet. There is a keyboard-reachable list of all ten coins under the canvas for screen readers, and the animation respects the "reduce motion" setting.
+---
 
-![POD bubble dashboard](docs/images/bubbles.png)
+## The Telegram bot
 
-### Web — per-coin detail (`/asset/[symbol]`)
-
-A full page for one coin: the score gauge, the reasoning, every source contribution with its citation (for example `SoSoValue /etfs/summary-history (30d)`), the target basket, and a 30-day score trace. The trace is an indicative line for now — see [What is not done yet](#what-is-not-done-yet).
-
-![Per-coin detail page](docs/images/asset.png)
-
-### Web — how scoring works (`/how-it-works`)
-
-The math, the source weights, the confidence rules, the freshness rules, and an honest limitations section. This page exists so a reviewer or a user can check the work.
-
-![How scoring works](docs/images/methodology.png)
-
-### Telegram bot
+Auto-generates an in-bot ValueChain wallet on `/start` (private key encrypted at rest, AES-256-GCM) so a new user is trading in ~30 seconds — no external wallet.
 
 | Command | What it does |
 |---|---|
-| `/start` | Short intro, then pick a risk profile (Chill / Balanced / Send it). |
-| `/signal` | Full BTC analysis card plus a short AI-written explanation. |
-| `/score BTC` | One-line score and reasoning for a coin. |
-| `/trade` | Shows a confirmation card — "Buy $6 of BTC at market, based on POD Score N" — with Confirm and Cancel buttons. On Confirm, POD places a real order on the SoDEX testnet and reports the result. Non-BUY directions stop before the card with an explanation. |
-| `/lang` | Switch the bot language (English / Chinese / Japanese / Korean). |
-| `/help` | List the commands. |
+| `/start` | Intro + risk profile; mints your in-bot wallet. Handles deep links (`?start=score-BTC`, `?start=ref-<id>`). |
+| `/score BTC` | One-line score + reasoning, with one-tap **Buy $5 / $10** buttons on constructive coins. |
+| `/signal` | Full BTC card + an AI-written explanation. |
+| `/ask <question>` | Natural-language Q&A answered **only** from live POD data, with citations (0G AI). |
+| `/trade` | Confirm card → real EIP-712-signed SoDEX testnet order, result reported back. |
+| `/tp BTC 70000 60000` | Server-side take-profit / stop-loss; a monitor exits when a level is hit. |
+| `/dca BTC 5` | Recurring buy on a schedule. |
+| `/ladder BTC 20` | A batch of limit buys stepped below the orderbook. |
+| `/safety` | Dead-man switch — auto-cancels resting orders after N minutes. |
+| `/alert BTC above 70` | Ping when a score crosses; also POSTs to your `/webhook` URL. |
+| `/watch` · `/watchlist` | Personal watchlist for the daily digest. |
+| `/wallet` · `/portfolio` | Your wallet + balance; the demo trading wallet's holdings. |
+| `/import` · `/export` | Bring your own wallet / reveal your key. |
+| `/pro` · `/ref` · `/webhook` | Freshness tier, referral link, event webhook. |
+| `/lang` · `/help` | Language (EN/中文/日本語/한국어), commands. |
+| inline mode | Type `@podttest_bot BTC` in **any** chat to drop a live score card. |
 
-The bot and the web dashboard read the same cached scores, so a number you see in `/score BTC` matches what you see on `/bubbles` and in `/api/scores`.
+The bot and web read the same 10-minute cached scores, so `/score BTC` matches `/bubbles` and `/api/scores`.
 
-![Telegram bot on mobile](docs/images/mobile.png)
+![Telegram bot](docs/images/mobile.png)
 
 ---
 
-## On-chain contracts
+## On-chain
 
-The project's contracts are deployed on the ValueChain testnet (chain ID 138565):
+Contracts on the ValueChain testnet (chain ID 138565):
 
-| Contract | Address | Deploy transaction |
-|---|---|---|
-| `ReasoningLogger` | `0x0723dc7D775864ec08797e84d2A5E068876B221B` | `0xf1af47cc601540bf42a173492cbfc7e8677a7911070a414137d7396b9d04e669` |
-| `DrawdownGuard` | `0xaB318f90a8EB8dce770f7B39D5F1175c07706B83` | `0xf76de924d1e52cf340dcd07802151df69cfa427cd9d779e6794217eb5d60c41b` |
+| Contract | Address |
+|---|---|
+| `ReasoningLogger` | `0x0723dc7D775864ec08797e84d2A5E068876B221B` |
+| `DrawdownGuard` | `0xaB318f90a8EB8dce770f7B39D5F1175c07706B83` |
 
-Deployer: `0x85987DE711B660d2452AA80D4cBfb2b18981CaaB`. Check the code is there:
+**`ReasoningLogger` is now written to.** The daily job anchors a `keccak256` of each score's canonical data on-chain and stores the tx. A per-coin page shows the receipt; `GET /api/receipt/BTC` returns the hash, tx, and explorer link. Anyone can recompute the hash from the public score and confirm it matches. `DrawdownGuard` holds the per-profile max-drawdown caps (Chill 5% / Balanced 10% / Send-it 20%) for the vault design.
 
 ```bash
-cast code 0x0723dc7D775864ec08797e84d2A5E068876B221B \
-  --rpc-url https://testnet-rpc.valuechain.xyz
+cast code 0x0723dc7D775864ec08797e84d2A5E068876B221B --rpc-url https://testnet-rpc.valuechain.xyz
 ```
 
-`ReasoningLogger` is the on-chain anchor for a hash of each score's underlying data, so a score POD quotes can be checked later. `DrawdownGuard` enforces a drawdown cap for the vault design. Wiring the scoring pipeline to write a hash on every score is the next step — see [What is not done yet](#what-is-not-done-yet). To build the contracts yourself, run `forge install` inside `packages/pod-contracts` first (the OpenZeppelin and forge-std libraries are not vendored), then `forge test`.
-
-A note on getting native gas for the deploy: the SoDEX testnet faucet only drips USDC, not the native SOSO that pays for gas. The workaround was to buy WSOSO on the SoDEX spot market, then use the `transferAsset` endpoint (`type=2`, `toAccountID=999` — `EVM_WITHDRAW`) to move it to the deployer wallet as native gas. The script for that is `apps/pod-web/scripts/withdraw-wsoso-to-evm.mts`.
+Note on gas: the SoDEX testnet faucet drips USDC, not the native SOSO for gas. The workaround was to buy WSOSO on the SoDEX spot market and `transferAsset` (`type=EVM_WITHDRAW`, `toAccountID=999`) it to the deployer as native gas. Trading itself is gasless (off-chain EIP-712), so users never need native gas.
 
 ---
 
 ## Run it locally
 
-You need Node 22+ and pnpm 10+ (the repo pins `pnpm@10.32.1` via `packageManager`).
+Node 22+ and pnpm 10+ (pinned `pnpm@10.32.1`).
 
 ```bash
 git clone https://github.com/Pratiikpy/pod.git
 cd pod
-
 pnpm install
 pnpm --filter @pod/sosovalue-sdk build
 pnpm --filter @pod/sodex-sdk build
 pnpm --filter @pod/signal-engine build
 
-# copy the env template and fill in at least SOSOVALUE_API_KEY
-cp .env.example apps/pod-web/.env.local
-# then edit apps/pod-web/.env.local
-
-# run the web app
-pnpm --filter @pod/pod-web dev
-# open http://localhost:3000/bubbles
-
-# run the bot in a second terminal (needs TELEGRAM_BOT_TOKEN)
-pnpm --filter @pod/pod-bot dev
+cp .env.example apps/pod-web/.env.local   # then fill it in
+pnpm --filter @pod/pod-web dev            # http://localhost:3000/bubbles
 ```
 
-Environment variables that matter:
+The bot runs as a webhook route inside the web app (`/api/telegram`) — no separate process. Point Telegram at it with `setWebhook`.
+
+Environment variables:
 
 | Variable | Needed by | Effect if missing |
 |---|---|---|
-| `SOSOVALUE_API_KEY` | web, bot | The dashboard and bot fall back to neutral placeholder scores and say so. |
-| `TELEGRAM_BOT_TOKEN` | bot | The bot will not start. |
-| `SODEX_PRIVATE_KEY` | bot `/trade` | `/trade` replies that execution is not configured. |
-| `NVIDIA_API_KEY` | bot | The bot uses template explanations instead of AI-written ones. |
-| `DEPLOYER_PRIVATE_KEY`, `VALUECHAIN_TESTNET_RPC` | contract deploy | Skipped. |
-
-The repo also ships a one-shot `deploy.sh` that runs the tests, builds the SDKs, deploys the contracts (if the deployer wallet has gas), and deploys the web app.
+| `SOSOVALUE_API_KEYS` | scores | Comma-separated key pool (round-robin + 429 failover); the 10-coin fan-out exceeds one key's 20/min. Falls back to `SOSOVALUE_API_KEY`. Without any, scores fall back to neutral and say so. |
+| `DATABASE_URL` | history, wallets, alerts, DCA, watchlist, referrals | Postgres (Neon free tier). Without it, those features no-op. |
+| `TELEGRAM_BOT_TOKEN` | bot | The bot won't respond. |
+| `SODEX_PRIVATE_KEY` | `/trade`, presets, TP/SL, DCA | Execution disabled. |
+| `WALLET_ENCRYPTION_KEY` | in-bot wallets | 32-byte hex; without it, wallet features off. |
+| `OG_API_KEY` | `/ask`, narration | 0G AI (OpenAI-compatible); NVIDIA is the fallback, then templates. |
+| `COINGECKO_API_KEY` | social source | Optional demo key; without it the free tier rate-limits the 10-coin burst (works for ~5). |
+| `DEPLOYER_PRIVATE_KEY`, `VALUECHAIN_TESTNET_RPC` | on-chain logging | Falls back to `SODEX_PRIVATE_KEY` + a default RPC. |
 
 ---
 
-## How to check it works (for a reviewer, ~5 minutes)
+## How to check it works (~5 minutes)
 
-1. Open https://pod-app-phi.vercel.app/bubbles. The first load can take about 30 seconds — it fetches all ten coins across five sources, then caches the result for 10 minutes. You should see ten bubbles with different scores, not all the same number.
-2. Click a bubble. The drawer shows the score, the reasoning, and a "Sources (N/5)" panel with the per-source breakdown. Click "View full analysis" for the per-coin page.
-3. Open https://pod-app-phi.vercel.app/api/scores in a browser. Same numbers, raw JSON, with a `generated_at` timestamp.
-4. Open https://t.me/podttest_bot and send `/score BTC`. The score should match what you saw on the web. Send `/signal` for the full card. Send `/trade` to see the confirmation flow.
-5. Read https://pod-app-phi.vercel.app/how-it-works for the method, and run the `cast code` command above to confirm the contracts are deployed.
-
-Everything is reproducible: the scoring code is in `packages/signal-engine`, the API responses are open, and the on-chain addresses are listed above.
+1. Open [`/bubbles`](https://pod-app-phi.vercel.app/bubbles). Ten bubbles, **different** scores (not all 50). Click one → drawer with reasoning + a "Sources (N/6)" breakdown.
+2. Open [`/api/scores`](https://pod-app-phi.vercel.app/api/scores) → same ten scores as JSON with a fresh `generated_at`.
+3. Open [`/asset/BTC`](https://pod-app-phi.vercel.app/asset/BTC) → scroll to **On-chain receipt**; the tx link opens on the ValueChain explorer.
+4. In [the bot](https://t.me/podttest_bot): `/score BTC` (matches the web), `/ask which coin is most bearish and why`, `/wallet`, and tap **Buy $5** on a constructive `/score` — a real SoDEX order ID comes back.
+5. Type `@podttest_bot BTC` in any chat to see inline mode; hit [`/api/mcp`](https://pod-app-phi.vercel.app/api/mcp) to see the agent tools.
 
 ---
 
 ## How this maps to the judging criteria
 
-**User value and practical impact.** POD takes data that real desks use — ETF flows, the macro calendar, corporate Bitcoin holdings — and turns it into one number with a reason attached. A trader gets the institutional read on the ten ETF coins for free, in the place they already spend time, and can act on it behind a confirm step. The chosen risk profile shapes the target basket POD shows for the coin.
+- **User value & practical impact (30%)** — the institutional read on the ten ETF coins for free, plus market intel (sector rotation, unlocks, cycle, corporate buys), an AI you can ask, and one-tap execution with TP/SL, DCA, and alerts.
+- **Functionality & working demo (25%)** — ten web surfaces, ~20 bot commands + inline mode, real SoDEX order IDs, on-chain receipts, an MCP server — none of the core flow is mocked, all verified end-to-end.
+- **Logic, workflow & product design (20%)** — a documented six-source weighted z-score, every claim cited, confirm-gated trades, honest low-confidence, and one shared cache so web/bot/API never disagree.
+- **Data & API integration (15%)** — SoSoValue across ETF flow, macro, news, treasuries, fundraising, indices/SSI, sector-spotlight, token-economics, stablecoin analyses, and per-coin snapshots + order-book depth; SoDEX spot (market/limit/batch/cancel/schedule-cancel) with EIP-712 signing; CoinGecko social; ValueChain contracts.
+- **UX & clarity (10%)** — the bubble front door, consistent nav, share cards, QR + deep links, and honest loading/empty/error states.
 
-**Functionality and working demo.** There are four working surfaces: the web dashboard, the per-coin pages and the methodology page, the Telegram bot with `/signal` `/score` `/trade`, and the deployed contracts on ValueChain testnet. The public `/api/scores` endpoint is live. None of the core flow is mocked.
+---
 
-**Logic, workflow, and product design.** The score is a documented weighted z-score across five sources, not a black box. Every claim in the UI links to the source data. `/trade` has a confirmation gate before any order goes out. There is a freshness rule and a low-confidence rule, both visible to the user. The bot and web share one cached signal so numbers never disagree.
+## Proven demand — every feature maps to a product that validated it
 
-**Data and API integration.** POD uses the SoSoValue API across ETF flows, macro events, news, BTC treasuries, and fundraising. It uses the SoDEX API for spot symbols, account state, and signed (EIP-712) order placement. It uses ValueChain for the deployed contracts. The `transferAsset` endpoint is used to move WSOSO out of the SoDEX ledger to fund deployment gas.
+None of POD's features are speculative. Each one copies a pattern already proven at scale by a real product with real users, revenue, or engagement — then applies it to institutional ETF-flow data and on-chain execution.
 
-**UX and clarity.** The bubble dashboard is the front door — colour, size, and a click for the why. The interface is responsive, the drawer becomes a bottom sheet on mobile, there is a keyboard-and-screen-reader fallback, and loading and error states are handled honestly rather than hidden. First useful screen in under a minute.
+| POD feature | Who proved the demand | The evidence |
+|---|---|---|
+| **In-bot wallet on `/start`** (F11) | Trojan, Maestro, Banana Gun, BONKbot | 500k+ users each; auto-generated custodial wallet is the #1 onboarding conversion lever — trade in ~30s, no external wallet. |
+| **One-tap preset orders** (F12) | Every top Telegram bot | Preset buy/sell buttons are the universal speed win; Telegram bots drove ~$23.4B of 2025 crypto volume. |
+| **Server-side TP/SL** (F13) | Trojan | Auto-sell that runs with Telegram closed is the #1 retention feature — keeps positions and money in the product. |
+| **Score-triggered alerts** (F15) | Whale Alert, Nansen Smart Alerts, CryptoQuant | Whale Alert's pure alert feed has **310k** Telegram subscribers; alerts are the universally-paid daily-use primitive. |
+| **`/ask` grounded Q&A** (F16) | aixbt Terminal, Bankr, Messari Copilot | Conversational "ask the agent" is the most-used AI pattern; Messari grounds every answer in cited data (POD does the same — no invented numbers). |
+| **DCA schedules** (F17) | Trojan / Maestro DCA, 3Commas | "Set a rule, let it run" is proven retail behaviour. |
+| **Portfolio / PnL view** (F18) | Every bot's daily surface; CoinStats/Delta (multi-million users) | Portfolio is the daily-open hook. |
+| **Shareable score cards + inline mode** (F20, F43) | Trojan/BONKbot PnL cards; Stripe payment links, Cash App `$cashtag` | Shareable artifacts are the free viral loop; inline mode drops a live score into any group chat with no install. |
+| **Composite score + leaderboard** (F1, F2) | Kaito "Mindshare", Nansen "Smart Money" | One branded proprietary number becomes the daily-open hook and the thing people quote. |
+| **Per-issuer ETF flow table** (F21) | Farside Investors | The single most-screenshotted ETF artifact in crypto; media and traders cite it nightly. |
+| **On-chain receipts + track record** (F26, F27) | dHEDGE, Enzyme, Index Coop | Verifiable-on-chain everything is the entire trust model of on-chain asset management; aixbt shows even honest hit-rate earns trust. |
+| **SSI index co-pilot** (F24) | Index Coop, Set/TokenSets, SoSoValue SSI | "One token = a whole strategy" is a proven, trusted product. |
+| **Market intel** (F6/F7/F8/F9) | Nansen, Messari, Santiment, Arkham | Sector rotation, unlock calendars, cycle metrics, and labelled corporate flows are what users pay for daily. |
+| **MCP server + open API** (F29, F30) | DeFiLlama, Glassnode (MCP), Kaiko, Messari | The API/agent surface is a core revenue + credibility line and matches the "agent-friendly" ValueChain theme. |
+| **Webhooks** (F31) | TradingView alerts → webhook → bot | The canonical "signal → action" bridge retail already understands. |
+| **Referral + fee-share** (F32–34) | Trojan (5-level, 35%), Banana ($BANANA 40% fee share) | The documented primary growth engine of every top bot. |
+| **Freshness / Pro tier** (F37) | CryptoQuant, Glassnode, Nansen | A delayed free tier + real-time paid tier is the proven monetization funnel. |
+| **Dead-man switch, limit ladder** (F19, F39) | Pro trading tooling (SoDEX `scheduleCancel`, batch orders) | Standard risk/execution primitives that carry the "risk control" judging bonus. |
+| **Embed badge + QR/connect** (F46, F49) | Stripe buy-button, TradingView widgets, bot deposit QRs | Frictionless distribution surfaces. |
+
+One honest caveat POD keeps front-and-centre: ETF flow is a **lagging, medium-term** signal (Farside, CoinGlass). POD frames the score as institutional-demand *context* with an explicit confidence flag — honesty is itself a trust feature, and it carries the risk-control judging bonus.
+
+The full research behind this — competitor-by-competitor, with sources — is in [`docs/POD_MASTER_PLAN.md`](docs/POD_MASTER_PLAN.md).
 
 ---
 
 ## What is not done yet
 
-- **`/trade` uses one shared wallet.** The bot signs every test trade with a single `SODEX_PRIVATE_KEY` set on the server. That is custodial. It is fine for a testnet demo where nothing has value, but it is not how a real product should work. The intended design is an embedded wallet per user (Privy or similar) so each person signs their own trades and POD never holds keys. That is the next step.
-- **`/trade` depends on the testnet venue state for the coin.** The demo wallet is authorised to trade — it has placed real orders on the SoDEX testnet (a `SOSO/USDC` market buy that came back with an order ID). But the `BTC/USDC` pair on the testnet intermittently goes into "cancel only mode", and `TESTBTC/USDC` sometimes reports `MissingOraclePrice`. When that happens, `/trade` still builds the order, signs it (EIP-712), and submits it — and the bot reports back the exact venue state. So whether a `/trade` on BTC fills depends on what state the testnet pair is in at that moment, not on any account permission.
-- **The `ReasoningLogger` contract is deployed but not yet written to.** The scoring pipeline does not yet push a hash on every score. The contract is live; wiring the write path is pending.
-- **No score history database yet.** The 30-day trace on the per-coin page is an indicative line, not real history. The daily cron job (`/api/cron/daily-signal`) is set up to record scores; once it has run for a month the trace will be real. Persisting to a real database (Postgres on the Vercel marketplace) is on the list.
-- **The composite weights are fixed in code.** POD does not yet learn the weights from outcomes — there is no backtest loop tuning them. The weights are a reasonable starting point, not a trained model.
-- **SoSoValue free-tier rate limits.** On a busy run, individual sources can get rate-limited and skip. The drawer shows this with the "Sources (N/5)" count, and the score falls back to the sources that did return. POD does not pretend the missing data is there.
-- **Testnet only.** Every trade is on the SoDEX testnet. The on-chain transactions are real, on the ValueChain testnet, not mainnet. There is no real money at risk and none to be made.
-- **Reasoning is English-first.** The bot's UI text has four languages, but the AI-written explanations are generated in English. Translating the reasoning itself is later work.
+- **Trading uses one shared demo wallet.** `/trade` and presets sign with a single server-side `SODEX_PRIVATE_KEY`. Each user gets their own in-bot wallet (and can `/import` one), but trades execute on the shared funded wallet — per-user trading needs each wallet funded, which the testnet faucet doesn't do per-user. Custodial, fine for a testnet demo.
+- **Testnet fills depend on venue state.** Orders are placed and signed with real order IDs; whether they fill depends on the SoDEX testnet's thin liquidity and per-pair state (`cancel only`, `MissingOraclePrice`). The bot reports the exact venue result.
+- **Perps not funded.** The perps signing domain is fixed (`futures`), but the perps ledger isn't funded, so perps orders aren't demoed. Spot is the demo path.
+- **Score history is young.** The trace and hit-rate on `/track-record` accrue as the daily job runs — real, just early.
+- **Fixed weights.** The composite weights are a reasoned starting point, not trained on outcomes.
+- **No per-user public profile.** Shareable OG cards, the public track record, and connect links exist; a per-user handle profile would need an auth system POD deliberately doesn't have.
+- **English-first reasoning.** The bot UI has four languages; the AI explanations are English.
 
-Every one of these is also stated on the `/how-it-works` page.
+Every limitation is also stated on `/how-it-works`.
 
 ---
 
 ## Tech stack
 
-- **Web** — Next.js 15 (App Router), React, server components, deployed on Vercel. Two daily cron jobs.
-- **Bot** — grammY on a Vercel function, webhook-based.
-- **Signal engine** — a TypeScript package that turns raw SoSoValue data into a `PodSignal` (score, composite z, per-source contributions, plain-English reasoning, target basket). It has a batch mode that fetches the global sources once and reuses them across all ten coins, so the fan-out stays under the free-tier rate limit.
-- **SoSoValue SDK** — a typed client over the SoSoValue API with Zod schemas; rate-limit errors are surfaced as typed exceptions so the engine can decide what to do.
-- **SoDEX SDK** — a typed client over the SoDEX spot and perps APIs, including the EIP-712 signing ported from the official Go SDK.
-- **Contracts** — Foundry. `ReasoningLogger`, `DrawdownGuard`, and a `PodVault` design.
+- **Web + bot** — Next.js 15 (App Router, server components) on Vercel; the grammY bot is a webhook route inside the app.
+- **Signal engine** — a TypeScript package turning raw SoSoValue + CoinGecko data into a `PodSignal`; a batch mode hoists global sources and reuses them across all ten coins under the rate limit.
+- **SoSoValue SDK** — a typed, Zod-validated client with a round-robin API-key pool, 429 failover, and a process-wide cache that dedupes the fan-out.
+- **SoDEX SDK** — a typed spot/perps client with EIP-712 signing ported from the Go SDK, plus an account WebSocket for fill receipts.
+- **Data** — Neon Postgres (scores, wallets, alerts, DCA, TP/SL, watchlist, referrals, webhooks); 0G AI for reasoning; CoinGecko for social.
+- **Contracts** — Foundry: `ReasoningLogger`, `DrawdownGuard`, a `PodVault` design.
 
 ## Repo layout
 
 ```
 pod/
 ├── apps/
-│   ├── pod-web/          Next.js app — /bubbles, /asset/[symbol], /how-it-works, /api/scores, cron jobs, Telegram webhook
-│   ├── pod-bot/          grammY bot logic (also bundled into the pod-web webhook route)
-│   └── pod-workers/      background job scaffolding (signal poller, rebalancer)
+│   ├── pod-web/          Next.js app — all web pages, the Telegram webhook,
+│   │                     the public + MCP APIs, and the cron jobs
+│   ├── pod-bot/          legacy standalone bot (the live bot is the webhook route)
+│   └── pod-workers/      background job scaffolding
 ├── packages/
-│   ├── sosovalue-sdk/    typed SoSoValue API client
-│   ├── sodex-sdk/        typed SoDEX API client + EIP-712 signing
-│   ├── signal-engine/    the five-source scoring engine
-│   ├── pod-shared/       shared types and helpers
-│   └── pod-contracts/    Foundry contracts and deploy script
+│   ├── sosovalue-sdk/    typed SoSoValue client (key rotation + cache)
+│   ├── sodex-sdk/        typed SoDEX client + EIP-712 signing + WebSocket
+│   ├── signal-engine/    the six-source scoring engine
+│   └── pod-contracts/    Foundry contracts
 ├── docs/
-│   ├── ARCHITECTURE.md   how the pieces fit together
-│   └── images/           screenshots used in this README
-├── deploy.sh             one-shot: test → build SDKs → deploy contracts → deploy web
-├── vercel.json           Vercel build configuration
-└── .env.example          environment variable template
+│   ├── POD_MASTER_PLAN.md   the full build plan
+│   └── images/             screenshots
+├── deploy.sh · vercel.json · .env.example
 ```
 
 ## License
