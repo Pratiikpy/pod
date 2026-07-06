@@ -469,6 +469,28 @@ function getHandler() {
     await ctx.reply(help(state.language));
   });
 
+  // Inline mode — type "@podttest_bot BTC" in any chat to drop a live score
+  // card (needs inline enabled via BotFather /setinline).
+  bot.on('inline_query', async (ctx) => {
+    const q = ctx.inlineQuery.query.trim().toUpperCase();
+    const bubbles = await fetchAllBubbleData();
+    const matches = q
+      ? bubbles.filter((b) => b.asset.includes(q) || b.name.toUpperCase().includes(q))
+      : bubbles;
+    const results = matches.slice(0, 10).map((b) => ({
+      type: 'article' as const,
+      id: b.asset,
+      title: `${b.asset} — POD Score ${b.score}/100 (${b.direction})`,
+      description: b.reasoning.slice(0, 90),
+      input_message_content: {
+        message_text:
+          `*${b.asset} — POD Score ${b.score}/100* (${b.direction})\n\n${b.reasoning}\n\nvia @podttest_bot`,
+        parse_mode: 'Markdown' as const,
+      },
+    }));
+    await ctx.answerInlineQuery(results, { cache_time: 300 });
+  });
+
   // Fallback
   bot.on('message', async (ctx) => {
     const state = getOrCreateState(ctx);
