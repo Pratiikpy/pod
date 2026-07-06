@@ -483,12 +483,14 @@ function getHandler() {
       title: `${b.asset} — POD Score ${b.score}/100 (${b.direction})`,
       description: b.reasoning.slice(0, 90),
       input_message_content: {
-        message_text:
-          `*${b.asset} — POD Score ${b.score}/100* (${b.direction})\n\n${b.reasoning}\n\nvia @podttest_bot`,
-        parse_mode: 'Markdown' as const,
+        message_text: `${b.asset} — POD Score ${b.score}/100 (${b.direction})\n\n${b.reasoning}\n\nvia @podttest_bot`,
       },
     }));
-    await ctx.answerInlineQuery(results, { cache_time: 300 });
+    try {
+      await ctx.answerInlineQuery(results, { cache_time: 10 });
+    } catch (err) {
+      console.error('[bot] inline answer failed:', err);
+    }
   });
 
   // Fallback
