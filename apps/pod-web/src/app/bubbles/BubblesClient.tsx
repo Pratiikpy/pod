@@ -46,6 +46,18 @@ export function BubblesClient({ bubbles }: { bubbles: BubbleData[] }) {
               Live scores
             </Link>
             <span style={{ color: POD.ink50, fontWeight: 500 }}>Bubbles</span>
+            <Link href="/leaderboard" style={{ color: POD.ink300, textDecoration: 'none' }}>
+              Leaderboard
+            </Link>
+            <Link href="/flows" style={{ color: POD.ink300, textDecoration: 'none' }}>
+              ETF flows
+            </Link>
+            <Link href="/ssi" style={{ color: POD.ink300, textDecoration: 'none' }}>
+              SSI
+            </Link>
+            <Link href="/intel" style={{ color: POD.ink300, textDecoration: 'none' }}>
+              Intel
+            </Link>
             <Link href="/how-it-works" style={{ color: POD.ink300, textDecoration: 'none' }}>
               How it works
             </Link>

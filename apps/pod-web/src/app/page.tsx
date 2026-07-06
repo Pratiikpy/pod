@@ -83,6 +83,18 @@ export default async function HomePage() {
             <a href="/bubbles" style={{ color: POD.ink300, textDecoration: 'none' }}>
               Bubbles
             </a>
+            <a href="/leaderboard" style={{ color: POD.ink300, textDecoration: 'none' }}>
+              Leaderboard
+            </a>
+            <a href="/flows" style={{ color: POD.ink300, textDecoration: 'none' }}>
+              ETF flows
+            </a>
+            <a href="/ssi" style={{ color: POD.ink300, textDecoration: 'none' }}>
+              SSI
+            </a>
+            <a href="/intel" style={{ color: POD.ink300, textDecoration: 'none' }}>
+              Intel
+            </a>
             <a href="/how-it-works" style={{ color: POD.ink300, textDecoration: 'none' }}>
               How it works
             </a>
