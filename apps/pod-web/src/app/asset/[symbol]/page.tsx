@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { fetchAllBubbleData, type BubbleData } from '@/lib/bubble-data';
+import { getLatestReceipt, type OnChainReceipt } from '@/lib/db';
 import { POD, scoreColor, scoreLabel, genSpark } from '@/design/tokens';
 import { PodMark, ScoreGauge, AssetGlyph, Eyebrow, Hair, Spark } from '@/design/atoms';
 
@@ -12,6 +13,8 @@ const SOURCE_LABEL: Record<string, string> = {
   NEWS_SENTIMENT: 'News sentiment',
   BTC_TREASURY: 'BTC treasuries',
   VC_FUNDING: 'VC funding',
+  SOCIAL_SENTIMENT: 'Social sentiment',
+  STABLECOIN_LIQUIDITY: 'Stablecoin liquidity',
   PERP_FUNDING: 'Perp funding',
   SSI_INDEX: 'SSI index',
 };
@@ -34,6 +37,8 @@ export default async function AssetPage({ params }: { params: Promise<Params> })
   const all = await fetchAllBubbleData();
   const data = all.find((b) => b.asset === sym);
   if (!data) notFound();
+
+  const receipt = await getLatestReceipt(sym);
 
   return (
     <div
@@ -76,6 +81,8 @@ export default async function AssetPage({ params }: { params: Promise<Params> })
         <Reasoning data={data} />
 
         {data.contributions.length > 0 && <SourcesPanel data={data} />}
+
+        {receipt && <ReceiptPanel receipt={receipt} />}
 
         <ScoreHistory data={data} />
 
@@ -205,7 +212,7 @@ function Reasoning({ data }: { data: BubbleData }) {
 function SourcesPanel({ data }: { data: BubbleData }) {
   return (
     <section>
-      <Eyebrow>Sources ({data.contributions.length}/5)</Eyebrow>
+      <Eyebrow>Sources ({data.contributions.filter((c) => c.weight > 0).length}/6)</Eyebrow>
       <Hair color="rgba(255,255,255,0.06)" style={{ marginTop: 12, marginBottom: 18 }} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {data.contributions.map((c) => {
@@ -366,6 +373,63 @@ function CTARow({ data }: { data: BubbleData }) {
         How POD scores are calculated
       </Link>
     </section>
+  );
+}
+
+function ReceiptPanel({ receipt }: { receipt: OnChainReceipt }) {
+  const short = (s: string) => `${s.slice(0, 10)}…${s.slice(-8)}`;
+  return (
+    <section
+      style={{
+        border: '1px solid rgba(190,242,100,0.18)',
+        background: 'rgba(190,242,100,0.03)',
+        borderRadius: 16,
+        padding: '22px 24px',
+      }}
+    >
+      <div style={{ fontSize: 12, letterSpacing: '0.12em', textTransform: 'uppercase', color: POD.lime, marginBottom: 6 }}>
+        On-chain receipt
+      </div>
+      <p style={{ color: POD.ink300, fontSize: 13.5, margin: '0 0 16px', maxWidth: 560 }}>
+        A hash of this score&apos;s underlying data is written to the ReasoningLogger contract on ValueChain.
+        Anyone can recompute it from the public score and confirm it matches — the score can&apos;t be quietly
+        changed after the fact.
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
+        <ReceiptRow label="Reasoning hash" value={short(receipt.reasoningHash)} mono />
+        <ReceiptRow
+          label="Transaction"
+          value={short(receipt.onchainTx)}
+          href={`https://test-scan.valuechain.xyz/tx/${receipt.onchainTx}`}
+          mono
+        />
+        {receipt.onchainEntryId !== null && (
+          <ReceiptRow label="Entry #" value={String(receipt.onchainEntryId)} />
+        )}
+        <ReceiptRow label="Contract" value={short('0x0723dc7D775864ec08797e84d2A5E068876B221B')} mono />
+      </div>
+    </section>
+  );
+}
+
+function ReceiptRow({ label, value, href, mono }: { label: string; value: string; href?: string; mono?: boolean }) {
+  const valStyle = {
+    color: href ? POD.lime : POD.ink100,
+    fontFamily: mono ? 'ui-monospace, SFMono-Regular, monospace' : 'inherit',
+    fontSize: 13,
+    textDecoration: 'none',
+  } as const;
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+      <span style={{ color: POD.ink400 }}>{label}</span>
+      {href ? (
+        <a href={href} target="_blank" rel="noreferrer" style={valStyle}>
+          {value} ↗
+        </a>
+      ) : (
+        <span style={valStyle}>{value}</span>
+      )}
+    </div>
   );
 }
 

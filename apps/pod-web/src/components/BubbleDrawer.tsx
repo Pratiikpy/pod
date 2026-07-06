@@ -12,6 +12,8 @@ const SOURCE_LABEL: Record<string, string> = {
   NEWS_SENTIMENT: 'News sentiment',
   BTC_TREASURY: 'BTC treasuries',
   VC_FUNDING: 'VC funding',
+  SOCIAL_SENTIMENT: 'Social sentiment',
+  STABLECOIN_LIQUIDITY: 'Stablecoin liquidity',
   PERP_FUNDING: 'Perp funding',
   SSI_INDEX: 'SSI index',
 };
@@ -200,7 +202,7 @@ export function BubbleDrawer({
               gap: 10,
             }}
           >
-            <Eyebrow>Sources ({data.contributions.length}/5)</Eyebrow>
+            <Eyebrow>Sources ({data.contributions.filter((c) => c.weight > 0).length}/6)</Eyebrow>
             {data.contributions.map((c) => {
               const label = SOURCE_LABEL[c.source] ?? c.source;
               const z = c.zScore;
