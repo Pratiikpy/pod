@@ -373,7 +373,14 @@ function getHandler() {
   // Only enforce secretToken if Telegram was registered with one. An empty
   // string (env var unset) makes grammY reject every Telegram request with 401.
   const secret = process.env['TELEGRAM_WEBHOOK_SECRET'];
-  const opts = secret ? { secretToken: secret } : {};
+  // grammY's default webhook timeout is 10s, but a cold score cache runs the
+  // full fan-out (~35s). Allow up to 55s (under the 60s function limit) and
+  // return on timeout so Telegram does not retry-storm.
+  const opts: { secretToken?: string; timeoutMilliseconds: number; onTimeout: 'return' } = {
+    timeoutMilliseconds: 55_000,
+    onTimeout: 'return',
+  };
+  if (secret) opts.secretToken = secret;
   cachedHandler = webhookCallback(bot, 'std/http', opts) as (req: Request) => Promise<Response>;
   return cachedHandler;
 }
