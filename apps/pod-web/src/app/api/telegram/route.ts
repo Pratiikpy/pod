@@ -10,7 +10,7 @@ import { getBubble, fetchAllBubbleData, type BubbleData } from '@/lib/bubble-dat
 import { askPod, narrateScore, groundingFromBubbles } from '@/lib/bot/llm';
 import { getOrCreateUser } from '@/lib/bot/store';
 import { addAlert, listUserAlerts, clearUserAlerts, type AlertKind } from '@/lib/alerts';
-import { addToWatchlist, getWatchlist, addDca, listDca, clearDca } from '@/lib/user-features';
+import { addToWatchlist, getWatchlist, addDca, listDca, clearDca, recordReferral, countReferrals } from '@/lib/user-features';
 import { SoDEX } from '@pod/sodex-sdk';
 import { privateKeyToAccount } from 'viem/accounts';
 import type { Hex } from 'viem';
@@ -173,9 +173,24 @@ function getHandler() {
 
   const bot = new Bot(token);
 
-  // /start — greet, mint an in-bot wallet, show deposit address, pick risk
+  // /start — greet, mint an in-bot wallet, show deposit address, pick risk.
+  // Handles deep-link payloads: "ref-<id>" (referral) and "score-BTC".
   bot.command('start', async (ctx) => {
     const state = getOrCreateState(ctx);
+    const payload = ctx.match?.toString().trim() ?? '';
+
+    if (payload.startsWith('ref-')) {
+      const referrer = Number(payload.slice(4));
+      if (Number.isFinite(referrer)) await recordReferral(referrer, ctx.from!.id);
+    }
+    if (payload.startsWith('score-')) {
+      const asset = payload.slice(6).toUpperCase();
+      const b = await getBubble(asset as EtfSymbol);
+      if (b) {
+        await ctx.reply(`${asset} POD Score: ${b.score}/100 (${b.direction})\n\n${b.reasoning}`);
+      }
+    }
+
     await ctx.reply(welcome(state.language), {
       reply_markup: new InlineKeyboard()
         .text('Chill', 'risk:CHILL')
@@ -366,6 +381,16 @@ function getHandler() {
       ok
         ? `DCA set: $${amount} ${asset} every 24h (demo wallet). See /dca list.`
         : 'Could not save the DCA schedule.',
+    );
+  });
+
+  // /ref — your referral link + count
+  bot.command('ref', async (ctx) => {
+    const id = ctx.from!.id;
+    const count = await countReferrals(id);
+    await ctx.reply(
+      `Your referral link:\nhttps://t.me/podttest_bot?start=ref-${id}\n\n` +
+        `Invites so far: ${count}. When execution charges a fee, referrers earn a share of it.`,
     );
   });
 

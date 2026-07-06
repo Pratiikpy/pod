@@ -104,6 +104,31 @@ export async function markDcaRun(id: number): Promise<void> {
   await sql`update dca_schedules set last_run_at = now() where id = ${id}`;
 }
 
+// ── Referrals (F32–34) ───────────────────────────────────────────────────────
+
+/** Record that `referredId` joined via `referrerId`. No-op on self/duplicate. */
+export async function recordReferral(referrerId: number, referredId: number): Promise<boolean> {
+  const sql = db();
+  if (!sql || referrerId === referredId) return false;
+  try {
+    const rows = (await sql`
+      insert into referrals (referrer_id, referred_id) values (${referrerId}, ${referredId})
+      on conflict (referred_id) do nothing returning id
+    `) as Array<{ id: number }>;
+    return rows.length > 0;
+  } catch (err) {
+    console.error('[referrals] record failed:', err);
+    return false;
+  }
+}
+
+export async function countReferrals(referrerId: number): Promise<number> {
+  const sql = db();
+  if (!sql) return 0;
+  const rows = (await sql`select count(*)::int as n from referrals where referrer_id = ${referrerId}`) as Array<{ n: number }>;
+  return rows[0]?.n ?? 0;
+}
+
 function mapDca(r: Record<string, unknown>): DcaSchedule {
   return {
     id: Number(r['id']),
