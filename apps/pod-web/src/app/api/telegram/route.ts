@@ -8,7 +8,7 @@ import {
 import { tradeOnSignal } from '@/lib/trading';
 import { getBubble, fetchAllBubbleData, type BubbleData } from '@/lib/bubble-data';
 import { askPod, narrateScore, groundingFromBubbles } from '@/lib/bot/llm';
-import { getOrCreateUser } from '@/lib/bot/store';
+import { getOrCreateUser, getWalletKey } from '@/lib/bot/store';
 import { addAlert, listUserAlerts, clearUserAlerts, type AlertKind } from '@/lib/alerts';
 import { addToWatchlist, getWatchlist, addDca, listDca, clearDca, recordReferral, countReferrals, setWebhookUrl } from '@/lib/user-features';
 import { SoDEX } from '@pod/sodex-sdk';
@@ -209,6 +209,24 @@ function getHandler() {
         { parse_mode: 'Markdown' },
       );
     }
+  });
+
+  // /export — reveal your in-bot wallet private key (you own it)
+  bot.command('export', async (ctx) => {
+    const arg = ctx.match?.toString().trim().toLowerCase();
+    if (arg !== 'confirm') {
+      await ctx.reply(
+        'This reveals your wallet private key. Anyone with it controls your wallet — never share it.\n\n' +
+          'Send /export confirm to reveal it.',
+      );
+      return;
+    }
+    const key = await getWalletKey(ctx.from!.id);
+    if (!key) {
+      await ctx.reply('No wallet key found. Run /start first.');
+      return;
+    }
+    await ctx.reply(`Your private key (keep it secret):\n\`${key}\``, { parse_mode: 'Markdown' });
   });
 
   // /portfolio — holdings in the demo trading wallet (where /trade executes)

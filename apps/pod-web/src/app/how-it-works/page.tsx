@@ -206,6 +206,37 @@ podScore   = round(100 / (1 + e^(-compositeZ)))`}
           </ul>
         </Section>
 
+        {/* Built-in safety */}
+        <Section eyebrow="Built-in safety">
+          <ul
+            style={{
+              listStyle: 'none',
+              padding: 0,
+              margin: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+              fontSize: 15,
+              lineHeight: 1.55,
+              color: POD.ink200,
+            }}
+          >
+            <Bullet>
+              POD only scores the ten coins with a <Highlight>spot ETF</Highlight> — no honeypots,
+              no rug pulls, no random contract addresses. The universe is curated by construction,
+              not by roulette.
+            </Bullet>
+            <Bullet>
+              Every trade sits behind a <Highlight>confirm step</Highlight>. Nothing executes
+              without a tap, and each order is signed EIP-712 and reported back with its result.
+            </Bullet>
+            <Bullet>
+              Low-confidence scores are flagged; POD never pretends missing data is there. When a
+              source is rate-limited it contributes nothing and the drawer says so.
+            </Bullet>
+          </ul>
+        </Section>
+
         {/* Limitations */}
         <Section eyebrow="Limitations" tone="warn">
           <ul
