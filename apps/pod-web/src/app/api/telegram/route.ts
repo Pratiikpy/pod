@@ -10,6 +10,7 @@ import { getBubble, fetchAllBubbleData, type BubbleData } from '@/lib/bubble-dat
 import { askPod, narrateScore, groundingFromBubbles } from '@/lib/bot/llm';
 import { getOrCreateUser } from '@/lib/bot/store';
 import { addAlert, listUserAlerts, clearUserAlerts, type AlertKind } from '@/lib/alerts';
+import { addToWatchlist, getWatchlist, addDca, listDca, clearDca } from '@/lib/user-features';
 import { SoDEX } from '@pod/sodex-sdk';
 import { privateKeyToAccount } from 'viem/accounts';
 import type { Hex } from 'viem';
@@ -95,7 +96,7 @@ function welcome(lang: Lang): string {
 
 function help(lang: Lang): string {
   return {
-    en: `Commands:\n/start /signal /score /ask /alert /wallet /portfolio /trade /lang /help\n\n/ask <question> — ask about the market in plain English\n/alert BTC above 70 — ping me when a score crosses\n/wallet — your in-bot wallet + balance\n/portfolio — demo trading wallet holdings`,
+    en: `Commands:\n/start /signal /score /ask /alert /watch /dca /wallet /portfolio /trade /lang /help\n\n/ask <question> — ask the market in plain English\n/alert BTC above 70 — ping when a score crosses\n/watch BTC ETH — add to your daily digest\n/dca BTC 5 — recurring $5 buy\n/wallet · /portfolio — wallet + holdings`,
     zh: `命令：\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <问题> — 用自然语言询问市场\n/wallet — 你的机器人钱包和余额`,
     ja: `コマンド：\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <質問> — 市場について質問\n/wallet — あなたのウォレットと残高`,
     ko: `명령어:\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <질문> — 시장에 대해 질문\n/wallet — 내 지갑 및 잔액`,
@@ -304,6 +305,67 @@ function getHandler() {
       ok
         ? `Alert set: I'll ping you when ${asset} POD Score goes ${dir} ${n}. See all with /alerts.`
         : 'Could not save the alert (storage not configured).',
+    );
+  });
+
+  // /watch <COIN...> — add coins to your watchlist
+  bot.command('watch', async (ctx) => {
+    const syms = (ctx.match?.toString().trim().toUpperCase().split(/\s+/) ?? []).filter((s) =>
+      SUPPORTED_ASSETS.includes(s as EtfSymbol),
+    );
+    if (syms.length === 0) {
+      await ctx.reply('Usage: /watch BTC ETH SOL — adds coins to your watchlist for the daily digest.');
+      return;
+    }
+    for (const s of syms) await addToWatchlist(ctx.from!.id, s);
+    await ctx.reply(`Watching: ${syms.join(', ')}. See all with /watchlist.`);
+  });
+
+  // /watchlist — show your watchlist with current scores
+  bot.command('watchlist', async (ctx) => {
+    const list = await getWatchlist(ctx.from!.id);
+    if (list.length === 0) {
+      await ctx.reply('Your watchlist is empty. Add coins with /watch BTC ETH.');
+      return;
+    }
+    const bubbles = await fetchAllBubbleData();
+    const lines = list.map((a) => {
+      const b = bubbles.find((x) => x.asset === a);
+      return b ? `• ${a}: ${b.score}/100 (${b.direction})` : `• ${a}`;
+    });
+    await ctx.reply(`Your watchlist:\n${lines.join('\n')}`);
+  });
+
+  // /dca <COIN> <USD> — schedule a recurring daily buy
+  bot.command('dca', async (ctx) => {
+    const parts = (ctx.match?.toString().trim() ?? '').split(/\s+/).filter(Boolean);
+    if (parts[0]?.toLowerCase() === 'clear') {
+      const n = await clearDca(ctx.from!.id);
+      await ctx.reply(n > 0 ? `Cleared ${n} DCA schedule(s).` : 'No active DCA schedules.');
+      return;
+    }
+    if (parts[0]?.toLowerCase() === 'list') {
+      const list = await listDca(ctx.from!.id);
+      if (list.length === 0) {
+        await ctx.reply('No DCA schedules. Start one with /dca BTC 5.');
+        return;
+      }
+      await ctx.reply(
+        `Your DCA schedules:\n${list.map((d) => `• $${d.amountUsd} ${d.asset} every ${d.intervalHours}h`).join('\n')}\n\nClear with /dca clear.`,
+      );
+      return;
+    }
+    const asset = parts[0]?.toUpperCase();
+    const amount = Number(parts[1]);
+    if (!asset || !SUPPORTED_ASSETS.includes(asset as EtfSymbol) || !Number.isFinite(amount) || amount < 1) {
+      await ctx.reply('Usage: /dca BTC 5 — buys $5 of BTC daily on the demo wallet. /dca list · /dca clear.');
+      return;
+    }
+    const ok = await addDca(ctx.from!.id, asset, amount, 24);
+    await ctx.reply(
+      ok
+        ? `DCA set: $${amount} ${asset} every 24h (demo wallet). See /dca list.`
+        : 'Could not save the DCA schedule.',
     );
   });
 
