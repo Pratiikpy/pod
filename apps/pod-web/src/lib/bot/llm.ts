@@ -76,7 +76,9 @@ export async function askPod(
         { role: 'user', content: question },
       ],
       temperature: 0.4,
-      max_tokens: 700,
+      // 0G is a reasoning model: it spends output tokens thinking before it
+      // emits the answer, so the budget must comfortably exceed the reply.
+      max_tokens: 2000,
     });
     return res.choices[0]?.message?.content?.trim() || null;
   } catch (err) {
@@ -113,7 +115,7 @@ export async function narrateScore(
         },
       ],
       temperature: 0.7,
-      max_tokens: 800,
+      max_tokens: 1200,
     });
     return res.choices[0]?.message?.content?.trim() || null;
   } catch (err) {
