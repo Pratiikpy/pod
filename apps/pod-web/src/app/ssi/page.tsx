@@ -69,7 +69,13 @@ export default async function SsiPage() {
                     <td style={{ ...td, color: roiColor(r.snapshot?.roi3m) }}>{pct(r.snapshot?.roi3m)}</td>
                     <td style={{ ...td, textAlign: 'right' }}>
                       {r.tradablePair ? (
-                        <span style={{ color: POD.lime, fontSize: 12, fontWeight: 600 }}>{r.tradablePair}</span>
+                        <a
+                          href="https://t.me/podttest_bot"
+                          style={{ color: POD.lime, fontSize: 12, fontWeight: 600, textDecoration: 'none' }}
+                          title="Replicate this basket on SoDEX via Telegram"
+                        >
+                          {r.tradablePair} ↗
+                        </a>
                       ) : (
                         <span style={{ color: POD.ink600, fontSize: 12 }}>—</span>
                       )}

@@ -234,6 +234,13 @@ podScore   = round(100 / (1 + e^(-compositeZ)))`}
               Low-confidence scores are flagged; POD never pretends missing data is there. When a
               source is rate-limited it contributes nothing and the drawer says so.
             </Bullet>
+            <Bullet>
+              Each risk profile carries a max-drawdown cap — <Highlight>Chill 5%</Highlight>,{' '}
+              <Highlight>Balanced 10%</Highlight>, <Highlight>Send it 20%</Highlight> — that shapes the
+              target basket&apos;s stablecoin cushion. The on-chain{' '}
+              <Mono>DrawdownGuard</Mono> (0xaB318f…706B83, ValueChain testnet) enforces the cap for the
+              vault design.
+            </Bullet>
           </ul>
         </Section>
 
