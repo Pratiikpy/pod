@@ -23,6 +23,11 @@ const SUPPORTED_SYMBOLS: Record<string, string[]> = {
   BTC: ['BTC/USDC', 'TESTBTC/USDC'],
   ETH: ['ETH/USDC', 'TESTETH/USDC'],
   SOL: ['SOL/USDC'],
+  XRP: ['XRP/USDC'],
+  DOGE: ['DOGE/USDC'],
+  AVAX: ['AVAX/USDC'],
+  LINK: ['LINK/USDC'],
+  LTC: ['LTC/USDC'],
 };
 
 interface SymbolInfo {

@@ -72,7 +72,7 @@ interface UserState {
 
 const userStates = new Map<number, UserState>();
 
-const SUPPORTED_ASSETS: EtfSymbol[] = ['BTC', 'ETH', 'SOL'];
+const SUPPORTED_ASSETS: EtfSymbol[] = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'AVAX', 'LINK', 'LTC', 'DOT', 'HBAR'];
 
 // ── Localised copy ───────────────────────────────────────────────────────────
 
@@ -304,9 +304,47 @@ function getHandler() {
       await ctx.reply('Live data is unavailable right now. Try again in a minute.');
       return;
     }
-    await ctx.reply(
-      `${asset} POD Score: ${b.score}/100  (${b.direction}${b.uncertain ? ', low confidence' : ''})\n\n${b.reasoning}`,
-    );
+    const text = `${asset} POD Score: ${b.score}/100  (${b.direction}${b.uncertain ? ', low confidence' : ''})\n\n${b.reasoning}`;
+
+    // One-tap preset orders when POD is constructive and execution is configured.
+    const canTrade = process.env['SODEX_PRIVATE_KEY'] && (b.direction === 'BUY' || b.direction === 'STRONG_BUY');
+    if (canTrade) {
+      await ctx.reply(text, {
+        reply_markup: new InlineKeyboard()
+          .text(`Buy $5 ${asset}`, `trade:preset:${asset}:5`)
+          .text(`Buy $10 ${asset}`, `trade:preset:${asset}:10`),
+      });
+    } else {
+      await ctx.reply(text);
+    }
+  });
+
+  // One-tap preset order from a /score card
+  bot.callbackQuery(/^trade:preset:([A-Z]+):(\d+)$/, async (ctx) => {
+    const asset = ctx.match[1] as EtfSymbol;
+    const funds = Number(ctx.match[2]);
+    const tradePk = process.env['SODEX_PRIVATE_KEY'] as Hex | undefined;
+    await ctx.answerCallbackQuery({ text: 'Submitting…' });
+    if (!tradePk) {
+      await ctx.reply('Trade execution is not configured on this deployment.');
+      return;
+    }
+    const b = await getBubble(asset);
+    if (!b) {
+      await ctx.reply('Lost the signal — run /score again.');
+      return;
+    }
+    await ctx.reply(`Placing a $${funds} ${asset} market order on the SoDEX testnet (demo wallet)…`);
+    try {
+      const trade = await tradeOnSignal({ privateKey: tradePk, signal: bubbleToSignal(b), fundsUsd: funds });
+      let body = `${asset} ${b.direction} (POD Score ${b.score}/100)\n\n`;
+      if (!trade.attempted) body += `No order placed. ${trade.reason ?? trade.error ?? 'nothing to trade'}`;
+      else if (trade.error) body += `Order not placed. ${trade.error}`;
+      else body += `Order submitted.\nSymbol ID: ${trade.symbolID}\nFunds: $${trade.funds}\nResponse: ${JSON.stringify(trade.result).slice(0, 400)}`;
+      await ctx.reply(body);
+    } catch (err) {
+      await ctx.reply(`Error: ${(err as Error).message}`);
+    }
   });
 
   // /trade — confirm card → on Confirm, place a real SoDEX testnet order
