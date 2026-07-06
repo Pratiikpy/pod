@@ -62,3 +62,18 @@ export class SoSoValue {
 }
 
 export { SoSoValueClient };
+
+/**
+ * Resolve the SoSoValue API key pool from the environment.
+ * Prefers `SOSOVALUE_API_KEYS` (comma-separated pool for rotation) and falls
+ * back to the single `SOSOVALUE_API_KEY`. Returns [] when nothing is set.
+ */
+export function resolveSoSoValueKeys(
+  env: Record<string, string | undefined> = process.env,
+): string[] {
+  const raw = env['SOSOVALUE_API_KEYS'] ?? env['SOSOVALUE_API_KEY'] ?? '';
+  return raw
+    .split(',')
+    .map((k) => k.trim())
+    .filter((k) => k.length > 0);
+}

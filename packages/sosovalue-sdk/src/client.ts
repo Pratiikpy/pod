@@ -3,7 +3,14 @@ import { SoSoValueAPIError, SoSoValueRateLimitError, SoSoValueValidationError } 
 import type { z } from 'zod';
 
 export interface SoSoValueClientConfig {
-  apiKey: string;
+  /** Single API key. Ignored if `apiKeys` is provided. */
+  apiKey?: string;
+  /**
+   * Pool of API keys for round-robin + failover. The free tier caps at
+   * 20 req/min per key, and the 10-coin fan-out exceeds that — rotating
+   * across keys spreads the load and retries the next key on a 429.
+   */
+  apiKeys?: string[];
   baseUrl?: string;
   timeout?: number;
   /** Max retries for transient failures (5xx, network) */
@@ -41,7 +48,8 @@ interface FetchConfig<TSchema extends z.ZodTypeAny> {
  * - Rate limit: 20 req/min on Beta tier; 100k req/month
  */
 export class SoSoValueClient {
-  private readonly apiKey: string;
+  private readonly apiKeys: string[];
+  private keyIndex = 0;
   private readonly baseUrl: string;
   private readonly timeout: number;
   private readonly maxRetries: number;
@@ -49,10 +57,18 @@ export class SoSoValueClient {
   private readonly rateLimiter?: (endpoint: string) => Promise<void>;
 
   constructor(config: SoSoValueClientConfig) {
-    if (!config.apiKey) {
-      throw new Error('SoSoValueClient: apiKey is required');
+    const keys = (config.apiKeys && config.apiKeys.length > 0
+      ? config.apiKeys
+      : config.apiKey
+        ? [config.apiKey]
+        : []
+    )
+      .map((k) => k.trim())
+      .filter((k) => k.length > 0);
+    if (keys.length === 0) {
+      throw new Error('SoSoValueClient: at least one apiKey is required');
     }
-    this.apiKey = config.apiKey;
+    this.apiKeys = keys;
     this.baseUrl = config.baseUrl ?? 'https://openapi.sosovalue.com/openapi/v1';
     this.timeout = config.timeout ?? 15_000;
     this.maxRetries = config.maxRetries ?? 3;
@@ -80,23 +96,38 @@ export class SoSoValueClient {
       method,
       baseURL: this.baseUrl,
       timeout: this.timeout,
-      headers: {
-        'x-soso-api-key': this.apiKey,
-        'content-type': 'application/json',
-      },
+      // 429 is handled by key rotation below, not by ofetch retry.
       retry: this.maxRetries,
       retryDelay: 500,
-      retryStatusCodes: [408, 429, 500, 502, 503, 504],
+      retryStatusCodes: [408, 500, 502, 503, 504],
     };
     if (query !== undefined) opts.query = this.cleanQuery(query);
     if (body !== undefined) opts.body = body as Record<string, unknown>;
 
+    // Try each key in the pool on a rate-limit; a 429 on one key rotates to
+    // the next. Non-429 errors fail fast. Round-robin the starting key so a
+    // burst of concurrent calls spreads across the pool.
     let raw: unknown;
-    try {
-      raw = await $fetch(path, opts);
-    } catch (err: unknown) {
-      throw this.toApiError(err, path);
+    let lastError: Error | undefined;
+    for (let attempt = 0; attempt < this.apiKeys.length; attempt++) {
+      const key = this.nextKey();
+      try {
+        raw = await $fetch(path, {
+          ...opts,
+          headers: { 'x-soso-api-key': key, 'content-type': 'application/json' },
+        });
+        lastError = undefined;
+        break;
+      } catch (err: unknown) {
+        const apiErr = this.toApiError(err, path);
+        if (apiErr instanceof SoSoValueRateLimitError && attempt < this.apiKeys.length - 1) {
+          lastError = apiErr;
+          continue; // rotate to the next key
+        }
+        throw apiErr;
+      }
     }
+    if (lastError) throw lastError;
 
     const parsed = schema.safeParse(raw);
     if (!parsed.success) {
@@ -112,6 +143,13 @@ export class SoSoValueClient {
     }
 
     return parsed.data;
+  }
+
+  /** Round-robin the key pool so bursts of concurrent calls spread the load. */
+  private nextKey(): string {
+    const key = this.apiKeys[this.keyIndex % this.apiKeys.length]!;
+    this.keyIndex = (this.keyIndex + 1) % this.apiKeys.length;
+    return key;
   }
 
   private cleanQuery(query: Record<string, string | number | undefined>): Record<string, string> {
