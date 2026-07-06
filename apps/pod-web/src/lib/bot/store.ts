@@ -125,6 +125,35 @@ export async function ensureWallet(telegramId: number): Promise<string | null> {
   return address;
 }
 
+/** Import an external private key as the user's wallet (F36 — bring your own). */
+export async function importWallet(telegramId: number, privateKey: Hex): Promise<string | null> {
+  const sql = db();
+  if (!sql) return null;
+  let address: string;
+  try {
+    address = privateKeyToAccount(privateKey).address;
+  } catch {
+    return null;
+  }
+  const encrypted = encrypt(privateKey);
+  if (!encrypted) return null;
+  await sql`update bot_users set wallet_address = ${address}, wallet_encrypted = ${encrypted}, updated_at = now() where telegram_id = ${telegramId}`;
+  return address;
+}
+
+/** Set / read the Pro flag (F37 — freshness tier feature flag). */
+export async function setPro(telegramId: number, pro: boolean): Promise<void> {
+  const sql = db();
+  if (!sql) return;
+  await sql`update bot_users set is_pro = ${pro}, updated_at = now() where telegram_id = ${telegramId}`;
+}
+export async function isPro(telegramId: number): Promise<boolean> {
+  const sql = db();
+  if (!sql) return false;
+  const rows = (await sql`select is_pro from bot_users where telegram_id = ${telegramId}`) as Array<{ is_pro: boolean | null }>;
+  return rows[0]?.is_pro ?? false;
+}
+
 /** Decrypt and return the user's wallet private key (server-side signing only). */
 export async function getWalletKey(telegramId: number): Promise<Hex | null> {
   const sql = db();

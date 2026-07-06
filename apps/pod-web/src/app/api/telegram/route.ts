@@ -8,7 +8,7 @@ import {
 import { tradeOnSignal, placeLimitLadder, scheduleDeadman } from '@/lib/trading';
 import { getBubble, fetchAllBubbleData, type BubbleData } from '@/lib/bubble-data';
 import { askPod, narrateScore, groundingFromBubbles } from '@/lib/bot/llm';
-import { getOrCreateUser, getWalletKey } from '@/lib/bot/store';
+import { getOrCreateUser, getWalletKey, importWallet, setPro, isPro } from '@/lib/bot/store';
 import { addAlert, listUserAlerts, clearUserAlerts, type AlertKind } from '@/lib/alerts';
 import { addToWatchlist, getWatchlist, addDca, listDca, clearDca, recordReferral, countReferrals, setWebhookUrl, addTpsl, listTpsl, clearTpsl } from '@/lib/user-features';
 import { getMarketPrice } from '@/lib/trading';
@@ -97,7 +97,7 @@ function welcome(lang: Lang): string {
 
 function help(lang: Lang): string {
   return {
-    en: `Commands:\n/start /signal /score /ask /alert /watch /dca /wallet /portfolio /trade /lang /help\n\n/ask <question> — ask the market in plain English\n/alert BTC above 70 — ping when a score crosses\n/watch BTC ETH — add to your daily digest\n/dca BTC 5 — recurring $5 buy\n/wallet · /portfolio — wallet + holdings\n/tp BTC 70000 60000 — take-profit / stop-loss\n/ladder BTC 20 — limit-buy ladder · /safety — dead-man switch\n/ref — referral link · /webhook — event URL`,
+    en: `Commands:\n/start /signal /score /ask /alert /watch /dca /wallet /portfolio /trade /lang /help\n\n/ask <question> — ask the market in plain English\n/alert BTC above 70 — ping when a score crosses\n/watch BTC ETH — add to your daily digest\n/dca BTC 5 — recurring $5 buy\n/wallet · /portfolio — wallet + holdings\n/tp BTC 70000 60000 — take-profit / stop-loss\n/ladder BTC 20 — limit-buy ladder · /safety — dead-man switch\n/ref — referral · /webhook — events · /import — bring your wallet · /pro — tier`,
     zh: `命令：\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <问题> — 用自然语言询问市场\n/wallet — 你的机器人钱包和余额`,
     ja: `コマンド：\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <質問> — 市場について質問\n/wallet — あなたのウォレットと残高`,
     ko: `명령어:\n/start /signal /score /ask /wallet /trade /lang /help\n\n/ask <질문> — 시장에 대해 질문\n/wallet — 내 지갑 및 잔액`,
@@ -210,6 +210,34 @@ function getHandler() {
         { parse_mode: 'Markdown' },
       );
     }
+  });
+
+  // /import <privateKey> — use your own wallet instead of the in-bot one (F36)
+  bot.command('import', async (ctx) => {
+    const key = ctx.match?.toString().trim();
+    if (!key || !/^0x[0-9a-fA-F]{64}$/.test(key)) {
+      await ctx.reply('Send a 0x-prefixed 64-hex private key: /import 0x…  (it is encrypted at rest).');
+      return;
+    }
+    const addr = await importWallet(ctx.from!.id, key as Hex);
+    await ctx.reply(
+      addr ? `Imported. Your wallet is now:\n\`${addr}\`` : 'Could not import that key.',
+      { parse_mode: 'Markdown' },
+    );
+  });
+
+  // /pro — freshness tier: real-time refresh + priority (F37)
+  bot.command('pro', async (ctx) => {
+    const arg = ctx.match?.toString().trim().toLowerCase();
+    if (arg === 'on' || arg === 'off') {
+      await setPro(ctx.from!.id, arg === 'on');
+      await ctx.reply(arg === 'on' ? 'Pro enabled: real-time scores + priority /ask.' : 'Pro disabled.');
+      return;
+    }
+    const pro = await isPro(ctx.from!.id);
+    await ctx.reply(
+      `Pro is ${pro ? 'ON' : 'OFF'}.\n\nFree: scores cached ~10 min, daily digest.\nPro: real-time score refresh, instant alerts, priority /ask.\n\nToggle with /pro on (demo — no charge on testnet).`,
+    );
   });
 
   // /export — reveal your in-bot wallet private key (you own it)
