@@ -18,7 +18,7 @@ function col(n: number): string {
 }
 
 export default async function IntelPage() {
-  const { sectors, unlocks, cycle } = await fetchMarketIntel();
+  const { sectors, unlocks, cycle, equitySectors, recentBuys } = await fetchMarketIntel();
   const topSectors = [...sectors].sort((a, b) => b.change24hPct - a.change24hPct);
 
   return (
@@ -67,6 +67,44 @@ export default async function IntelPage() {
                   </span>
                   <span style={{ color: POD.amber }}>
                     {u.amount.toLocaleString(undefined, { maximumFractionDigits: 0 })} tokens · in {Math.round(u.daysAway)}d
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+
+        {/* Crypto-equity sectors (F7) */}
+        <Section title="Crypto-equity sectors (24h)">
+          {equitySectors.length === 0 ? (
+            <p style={{ color: POD.ink400, fontSize: 14 }}>Crypto-equity data unavailable right now.</p>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {equitySectors.map((s) => (
+                <div key={s.name} style={chip}>
+                  <span style={{ fontWeight: 600 }}>{s.name}</span>
+                  <span style={{ color: col(s.change24hPct), fontVariantNumeric: 'tabular-nums' }}>{pct(s.change24hPct)}</span>
+                  <span style={{ color: POD.ink500, fontSize: 11 }}>${(s.marketCap / 1e9).toFixed(0)}B</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+
+        {/* Corporate BTC accumulation (F9) */}
+        <Section title="Corporate BTC buys (last 45 days)">
+          {recentBuys.length === 0 ? (
+            <p style={{ color: POD.ink400, fontSize: 14 }}>No recent corporate BTC purchases detected.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {recentBuys.map((b, i) => (
+                <div key={`${b.ticker}-${i}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: POD.ink850, borderRadius: 10, fontSize: 13.5 }}>
+                  <span>
+                    <span style={{ fontWeight: 600 }}>{b.name}</span>
+                    <span style={{ color: POD.ink400, marginLeft: 10 }}>{b.date}</span>
+                  </span>
+                  <span style={{ color: POD.lime }}>
+                    +{Math.round(b.btc).toLocaleString()} BTC{b.usd > 0 ? ` · $${(b.usd / 1e6).toFixed(0)}M` : ''}
                   </span>
                 </div>
               ))}

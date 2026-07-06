@@ -41,6 +41,36 @@ export class CryptoStocksModule {
     return [];
   }
 
+  /** Crypto-equity sectors (BTC Treasury, Exchange, Miner…) with market cap + 24h change. */
+  async sectors(): Promise<Array<{ slug: string; name: string; marketCap: number; change24hPct: number }>> {
+    const result = await this.client.fetch({
+      path: '/crypto-stocks/sectors',
+      method: 'GET',
+      schema: z.object({
+        code: z.union([z.number(), z.string()]).optional(),
+        data: z
+          .array(
+            z
+              .object({
+                sector_slug: z.string(),
+                sector_name: z.string().optional(),
+                total_marketcap: z.number().nullable().optional(),
+                change_pct_24h: z.number().nullable().optional(),
+              })
+              .passthrough(),
+          )
+          .default([]),
+      }),
+      cacheTtl: 10 * 60,
+    });
+    return result.data.map((s) => ({
+      slug: s.sector_slug,
+      name: s.sector_name ?? s.sector_slug,
+      marketCap: s.total_marketcap ?? 0,
+      change24hPct: s.change_pct_24h ?? 0,
+    }));
+  }
+
   async snapshot(ticker: string) {
     const result = await this.client.fetch({
       path: '/crypto-stocks/market-snapshot',

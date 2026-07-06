@@ -17,11 +17,25 @@ export interface CyclePos {
   downFromAthPct: number | null;
   upFromCycleLowPct: number | null;
 }
+export interface EquitySector {
+  name: string;
+  marketCap: number;
+  change24hPct: number;
+}
+export interface BtcBuy {
+  ticker: string;
+  name: string;
+  date: string;
+  btc: number;
+  usd: number;
+}
 export interface MarketIntel {
   sectors: SectorRow[];
   trending: Array<{ name: string; change24hPct: number }>;
   unlocks: UnlockRow[];
   cycle: CyclePos[];
+  equitySectors: EquitySector[];
+  recentBuys: BtcBuy[];
   generatedAt: string;
 }
 
@@ -32,7 +46,8 @@ const CYCLE_ASSETS = ['BTC', 'ETH', 'SOL'];
 async function fetchMarketIntelInner(): Promise<MarketIntel> {
   const apiKeys = resolveSoSoValueKeys();
   const generatedAt = new Date().toISOString();
-  if (apiKeys.length === 0) return { sectors: [], trending: [], unlocks: [], cycle: [], generatedAt };
+  if (apiKeys.length === 0)
+    return { sectors: [], trending: [], unlocks: [], cycle: [], equitySectors: [], recentBuys: [], generatedAt };
 
   const sso = new SoSoValue({ apiKeys });
 
@@ -93,7 +108,43 @@ async function fetchMarketIntelInner(): Promise<MarketIntel> {
     }),
   );
 
-  return { sectors, trending, unlocks: unlocks.slice(0, 12), cycle, generatedAt };
+  // Crypto-equity sectors (F7).
+  let equitySectors: EquitySector[] = [];
+  try {
+    equitySectors = (await sso.stocks.sectors())
+      .map((s) => ({ name: s.name, marketCap: s.marketCap, change24hPct: s.change24hPct }))
+      .sort((a, b) => b.marketCap - a.marketCap)
+      .slice(0, 6);
+  } catch {
+    /* skip */
+  }
+
+  // Corporate BTC accumulation feed (F9) — recent buys across top treasuries.
+  const recentBuys: BtcBuy[] = [];
+  try {
+    const holders = (await sso.treasury.list({ pageSize: 8 })).slice(0, 6);
+    const cutoff = now - 45 * 24 * 60 * 60 * 1000;
+    await Promise.all(
+      holders.map(async (h) => {
+        try {
+          const hist = await sso.treasury.purchaseHistory(h.ticker, { limit: 6 });
+          for (const row of hist) {
+            const t = new Date(`${row.date}T00:00:00Z`).getTime();
+            if (!Number.isNaN(t) && t >= cutoff && row.btcAcquired > 0) {
+              recentBuys.push({ ticker: h.ticker, name: h.name ?? h.ticker, date: row.date, btc: row.btcAcquired, usd: row.acqCostUsd });
+            }
+          }
+        } catch {
+          /* skip */
+        }
+      }),
+    );
+    recentBuys.sort((a, b) => b.date.localeCompare(a.date));
+  } catch {
+    /* skip */
+  }
+
+  return { sectors, trending, unlocks: unlocks.slice(0, 12), cycle, equitySectors, recentBuys: recentBuys.slice(0, 10), generatedAt };
 }
 
 export const fetchMarketIntel = unstable_cache(fetchMarketIntelInner, ['market-intel-v1'], {
