@@ -74,3 +74,4 @@ export class SoDEX {
     return new SoDEX({ network });
   }
 }
+export * from './ws.js';
