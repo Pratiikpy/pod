@@ -96,7 +96,7 @@ async function fetchAllBubbleDataInner(): Promise<BubbleData[]> {
 
   let signals;
   try {
-    signals = await engine.generateBatch(requests, { perAssetGapMs: 120 });
+    signals = await engine.generateBatch(requests, { perAssetGapMs: 250 });
   } catch (err) {
     console.error('[bubble-data] generateBatch failed:', err);
     return TRACKED.map((t) => fallbackBubble(t, 'Signal temporarily unavailable.'));

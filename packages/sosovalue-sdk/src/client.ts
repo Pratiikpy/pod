@@ -26,6 +26,28 @@ export interface CacheAdapter {
   set<T>(key: string, value: T, ttlSeconds: number): Promise<void>;
 }
 
+/**
+ * Process-wide in-memory cache used by default. Makes each module's `cacheTtl`
+ * actually take effect and — crucially — dedupes identical calls fired inside
+ * one fan-out (e.g. the news feed requested once per asset) down to a single
+ * network hit, which keeps the batch under the per-key rate limit.
+ */
+const memoStore = new Map<string, { value: unknown; expires: number }>();
+const defaultMemoryCache: CacheAdapter = {
+  async get<T>(key: string): Promise<T | null> {
+    const hit = memoStore.get(key);
+    if (!hit) return null;
+    if (hit.expires < Date.now()) {
+      memoStore.delete(key);
+      return null;
+    }
+    return hit.value as T;
+  },
+  async set<T>(key: string, value: T, ttlSeconds: number): Promise<void> {
+    memoStore.set(key, { value, expires: Date.now() + ttlSeconds * 1000 });
+  },
+};
+
 interface FetchConfig<TSchema extends z.ZodTypeAny> {
   /** API path (without /openapi/v1 prefix) */
   path: string;
@@ -72,7 +94,7 @@ export class SoSoValueClient {
     this.baseUrl = config.baseUrl ?? 'https://openapi.sosovalue.com/openapi/v1';
     this.timeout = config.timeout ?? 15_000;
     this.maxRetries = config.maxRetries ?? 3;
-    if (config.cache !== undefined) this.cache = config.cache;
+    this.cache = config.cache ?? defaultMemoryCache;
     if (config.rateLimiter !== undefined) this.rateLimiter = config.rateLimiter;
   }
 
@@ -105,29 +127,36 @@ export class SoSoValueClient {
     if (body !== undefined) opts.body = body as Record<string, unknown>;
 
     // Try each key in the pool on a rate-limit; a 429 on one key rotates to
-    // the next. Non-429 errors fail fast. Round-robin the starting key so a
-    // burst of concurrent calls spreads across the pool.
+    // the next. If the whole pool is rate-limited, wait and retry the pool a
+    // couple of times with backoff (the 20/min window clears quickly). Non-429
+    // errors fail fast. Round-robin the starting key so concurrent calls spread.
     let raw: unknown;
+    let done = false;
     let lastError: Error | undefined;
-    for (let attempt = 0; attempt < this.apiKeys.length; attempt++) {
-      const key = this.nextKey();
-      try {
-        raw = await $fetch(path, {
-          ...opts,
-          headers: { 'x-soso-api-key': key, 'content-type': 'application/json' },
-        });
-        lastError = undefined;
-        break;
-      } catch (err: unknown) {
-        const apiErr = this.toApiError(err, path);
-        if (apiErr instanceof SoSoValueRateLimitError && attempt < this.apiKeys.length - 1) {
-          lastError = apiErr;
-          continue; // rotate to the next key
+    const rounds = 3;
+    for (let round = 0; round < rounds && !done; round++) {
+      if (round > 0) await new Promise((r) => setTimeout(r, 1500 * round));
+      for (let attempt = 0; attempt < this.apiKeys.length; attempt++) {
+        const key = this.nextKey();
+        try {
+          raw = await $fetch(path, {
+            ...opts,
+            headers: { 'x-soso-api-key': key, 'content-type': 'application/json' },
+          });
+          done = true;
+          lastError = undefined;
+          break;
+        } catch (err: unknown) {
+          const apiErr = this.toApiError(err, path);
+          if (apiErr instanceof SoSoValueRateLimitError) {
+            lastError = apiErr;
+            continue; // rotate to the next key / next round
+          }
+          throw apiErr;
         }
-        throw apiErr;
       }
     }
-    if (lastError) throw lastError;
+    if (!done && lastError) throw lastError;
 
     const parsed = schema.safeParse(raw);
     if (!parsed.success) {
