@@ -68,10 +68,22 @@ export async function GET(request: Request) {
     });
   }
 
+  // Fan out to the monitors so a single daily cron drives everything
+  // (Vercel Hobby caps the number of scheduled crons).
+  const origin = new URL(request.url).origin;
+  const headers = cronSecret ? { authorization: `Bearer ${cronSecret}` } : undefined;
+  const monitors = ['check-alerts', 'tpsl-monitor', 'dca', 'digest'];
+  const monitorResults = await Promise.allSettled(
+    monitors.map((m) => fetch(`${origin}/api/cron/${m}`, headers ? { headers } : {}).then((r) => r.json())),
+  );
+
   return NextResponse.json({
     generated_at: new Date().toISOString(),
     anchored: anchor,
     count: results.length,
     results,
+    monitors: Object.fromEntries(
+      monitors.map((m, i) => [m, monitorResults[i]?.status === 'fulfilled' ? (monitorResults[i] as PromiseFulfilledResult<unknown>).value : 'failed']),
+    ),
   });
 }
