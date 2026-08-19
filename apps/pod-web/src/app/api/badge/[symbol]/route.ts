@@ -2,7 +2,6 @@ import { fetchAllBubbleData } from '@/lib/bubble-data';
 import { scoreColor } from '@/design/tokens';
 
 export const dynamic = 'force-dynamic';
-export const revalidate = 300;
 
 /**
  * Embeddable live POD Score badge (SVG). Drop it on a site, README, or X bio:
