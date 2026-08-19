@@ -271,7 +271,7 @@ export function BubbleDrawer({
             View full analysis →
           </Link>
           <a
-            href={`https://t.me/podttest_bot?start=score_${data.asset}`}
+            href={`https://t.me/podttest_bot?start=score-${data.asset}`}
             style={{
               display: 'flex',
               justifyContent: 'center',

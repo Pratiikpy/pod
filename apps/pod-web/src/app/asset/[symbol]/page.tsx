@@ -343,7 +343,7 @@ function CTARow({ data }: { data: BubbleData }) {
       }}
     >
       <a
-        href={`https://t.me/podttest_bot?start=score_${data.asset}`}
+        href={`https://t.me/podttest_bot?start=score-${data.asset}`}
         style={{
           background: POD.lime,
           color: POD.ink900,
