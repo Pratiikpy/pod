@@ -154,3 +154,59 @@ export async function getLatestReceipt(asset: string): Promise<OnChainReceipt | 
     return null;
   }
 }
+
+// ── Last-good bubble snapshot ────────────────────────────────────────────
+//
+// The SoSoValue fan-out is rate-limited. When a cache refill lands while the
+// key pool is exhausted, most sources return nothing and every coin collapses
+// to a low-confidence 50 — and that degraded read would otherwise be published
+// for the whole cache window. We keep the last healthy fan-out here and serve
+// it instead, timestamps and all, so the site never shows a worse picture than
+// the one it already had.
+
+export interface SnapshotRow<T> {
+  payload: T;
+  coverage: number;
+  generatedAt: string;
+}
+
+/** Store a fan-out as the new last-good. `coverage` counts contributing sources. */
+export async function saveBubbleSnapshot(payload: unknown, coverage: number): Promise<void> {
+  const sql = db();
+  if (!sql) return;
+  try {
+    await sql`
+      insert into bubble_snapshot (id, payload, coverage, generated_at)
+      values (1, ${JSON.stringify(payload)}::jsonb, ${coverage}, now())
+      on conflict (id) do update
+        set payload = excluded.payload,
+            coverage = excluded.coverage,
+            generated_at = excluded.generated_at
+    `;
+  } catch (err) {
+    console.error('[db] saveBubbleSnapshot failed:', err);
+  }
+}
+
+/** The last healthy fan-out, if one was stored within `maxAgeHours`. */
+export async function loadBubbleSnapshot<T>(maxAgeHours = 24): Promise<SnapshotRow<T> | null> {
+  const sql = db();
+  if (!sql) return null;
+  try {
+    const rows = (await sql`
+      select payload, coverage, generated_at
+      from bubble_snapshot
+      where id = 1 and generated_at > now() - (${maxAgeHours} || ' hours')::interval
+    `) as Array<{ payload: T; coverage: number; generated_at: string }>;
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      payload: row.payload,
+      coverage: row.coverage,
+      generatedAt: new Date(row.generated_at).toISOString(),
+    };
+  } catch (err) {
+    console.error('[db] loadBubbleSnapshot failed:', err);
+    return null;
+  }
+}

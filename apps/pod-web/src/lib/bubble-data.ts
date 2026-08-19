@@ -1,4 +1,5 @@
 import { unstable_cache } from 'next/cache';
+import { loadBubbleSnapshot, saveBubbleSnapshot } from './db';
 import { SoSoValue, resolveSoSoValueKeys, type EtfSymbol } from '@pod/sosovalue-sdk';
 import {
   SignalEngine,
@@ -96,13 +97,13 @@ async function fetchAllBubbleDataInner(): Promise<BubbleData[]> {
 
   let signals;
   try {
-    signals = await engine.generateBatch(requests, { perAssetGapMs: 250 });
+    signals = await engine.generateBatch(requests, { perAssetGapMs: 400 });
   } catch (err) {
     console.error('[bubble-data] generateBatch failed:', err);
     return TRACKED.map((t) => fallbackBubble(t, 'Signal temporarily unavailable.'));
   }
 
-  return TRACKED.map((t, i) => {
+  const fresh: BubbleData[] = TRACKED.map((t, i) => {
     const signal = signals[i];
     if (!signal) {
       return fallbackBubble(t, 'Signal temporarily unavailable.');
@@ -122,6 +123,34 @@ async function fetchAllBubbleDataInner(): Promise<BubbleData[]> {
       generatedAt: signal.generated_at,
     };
   });
+
+  // How much of the six-source picture this run actually managed to read.
+  const freshCoverage = coverageOf(fresh);
+  const stored = await loadBubbleSnapshot<BubbleData[]>();
+
+  // Source coverage naturally varies day to day (news and social come and go),
+  // so only a collapse — a run that reads well under half of what the last
+  // healthy one did, the signature of hitting the rate limit — is rejected.
+  // Anything close to the previous reading is allowed through as the new truth.
+  const COLLAPSE_RATIO = 0.6;
+  if (
+    stored &&
+    Array.isArray(stored.payload) &&
+    freshCoverage < stored.coverage * COLLAPSE_RATIO
+  ) {
+    console.warn(
+      `[bubble-data] serving last-good snapshot (coverage ${stored.coverage} > ${freshCoverage})`,
+    );
+    return stored.payload;
+  }
+
+  if (freshCoverage > 0) await saveBubbleSnapshot(fresh, freshCoverage);
+  return fresh;
+}
+
+/** Number of sources that actually contributed, summed across every asset. */
+function coverageOf(bubbles: BubbleData[]): number {
+  return bubbles.reduce((n, b) => n + b.contributions.filter((c) => c.weight > 0).length, 0);
 }
 
 /** Single-asset lookup against the same cached fan-out the web UI uses. */
@@ -130,11 +159,11 @@ export async function getBubble(asset: EtfSymbol): Promise<BubbleData | undefine
   return all.find((b) => b.asset === asset);
 }
 
-// 10-minute TTL on the SoSoValue fan-out so we don't slam free-tier limits.
+// 15-minute TTL on the SoSoValue fan-out so we don't slam the per-key limits.
 // Stale-while-revalidate behaviour: first request after expiry returns last
 // cached value while a fresh fetch fills the cache for the next request.
 export const fetchAllBubbleData = unstable_cache(
   fetchAllBubbleDataInner,
   ['bubble-data-v2'],
-  { revalidate: 600, tags: ['bubbles'] },
+  { revalidate: 900, tags: ['bubbles'] },
 );
