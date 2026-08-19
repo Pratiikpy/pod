@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { fetchSsiOverview, type SsiRow } from '@/lib/ssi';
 import { POD } from '@/design/tokens';
 import { PodMark } from '@/design/atoms';
+import { SiteNav } from '@/components/SiteNav';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +26,7 @@ export default async function SsiPage() {
 
   return (
     <div style={{ minHeight: '100vh', background: POD.ink900, color: POD.ink100, fontFamily: 'Geist, system-ui' }}>
-      <NavBar />
+      <SiteNav active="/ssi" />
       <main style={{ maxWidth: 960, margin: '0 auto', padding: '40px 24px 96px' }}>
         <div style={{ marginBottom: 8, fontSize: 12, letterSpacing: '0.14em', textTransform: 'uppercase', color: POD.ink400 }}>
           SoSoValue SSI · {rows.length} baskets
@@ -135,48 +136,4 @@ const th = {
 };
 const td = { padding: '11px 14px', textAlign: 'right' as const, whiteSpace: 'nowrap' as const };
 
-function NavBar() {
-  const links = [
-    ['/', 'Live scores'],
-    ['/bubbles', 'Bubbles'],
-    ['/leaderboard', 'Leaderboard'],
-    ['/flows', 'ETF flows'],
-    ['/ssi', 'SSI'],
-    ['/how-it-works', 'How it works'],
-  ] as const;
-  return (
-    <nav
-      style={{
-        padding: '14px 24px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        borderBottom: '1px solid rgba(255,255,255,0.05)',
-        backdropFilter: 'blur(20px)',
-        background: 'rgba(7,9,13,0.7)',
-        position: 'sticky',
-        top: 0,
-        zIndex: 5,
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-        <Link href="/" style={{ display: 'flex' }}>
-          <PodMark size={20} />
-        </Link>
-        <div style={{ fontSize: 13, color: POD.ink300, display: 'flex', gap: 18 }}>
-          {links.map(([href, label]) => (
-            <Link key={href} href={href} style={{ color: POD.ink300, textDecoration: 'none' }}>
-              {label}
-            </Link>
-          ))}
-        </div>
-      </div>
-      <a
-        href="https://t.me/podttest_bot"
-        style={{ background: POD.lime, color: POD.ink900, padding: '8px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}
-      >
-        Try on Telegram
-      </a>
-    </nav>
-  );
-}
+

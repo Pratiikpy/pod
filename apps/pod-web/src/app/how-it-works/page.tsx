@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { POD } from '@/design/tokens';
 import { PodMark, Eyebrow, Hair } from '@/design/atoms';
+import { SiteNav } from '@/components/SiteNav';
 
 export const metadata = {
   title: 'How POD scores are calculated · POD',
@@ -71,7 +72,7 @@ export default function HowItWorks() {
         fontFamily: 'Geist, system-ui',
       }}
     >
-      <NavBar />
+      <SiteNav active="/how-it-works" />
 
       <main
         style={{
@@ -303,56 +304,7 @@ podScore   = round(100 / (1 + e^(-compositeZ)))`}
 
 // ── Layout helpers ─────────────────────────────────────────────────────
 
-function NavBar() {
-  return (
-    <nav
-      style={{
-        padding: '14px 24px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        borderBottom: '1px solid rgba(255,255,255,0.05)',
-        backdropFilter: 'blur(20px)',
-        background: 'rgba(7,9,13,0.7)',
-        position: 'sticky',
-        top: 0,
-        zIndex: 5,
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-        <Link href="/" style={{ display: 'flex' }}>
-          <PodMark size={20} />
-        </Link>
-        <div style={{ fontSize: 13, color: POD.ink300, display: 'flex', gap: 18 }}>
-          <Link href="/" style={{ color: POD.ink300, textDecoration: 'none' }}>
-            Live scores
-          </Link>
-          <Link href="/bubbles" style={{ color: POD.ink300, textDecoration: 'none' }}>
-            Bubbles
-          </Link>
-          <span style={{ color: POD.ink50, fontWeight: 500 }}>How it works</span>
-          <Link href="/api/scores" style={{ color: POD.ink300, textDecoration: 'none' }}>
-            API
-          </Link>
-        </div>
-      </div>
-      <a
-        href="https://t.me/podttest_bot"
-        style={{
-          background: POD.lime,
-          color: POD.ink900,
-          padding: '8px 14px',
-          borderRadius: 10,
-          fontSize: 13,
-          fontWeight: 600,
-          textDecoration: 'none',
-        }}
-      >
-        Try on Telegram
-      </a>
-    </nav>
-  );
-}
+
 
 function Footer() {
   return (

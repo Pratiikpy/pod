@@ -4,6 +4,7 @@ import { fetchAllBubbleData, type BubbleData } from '@/lib/bubble-data';
 import { getLatestReceipt, type OnChainReceipt } from '@/lib/db';
 import { POD, scoreColor, scoreLabel, genSpark } from '@/design/tokens';
 import { PodMark, ScoreGauge, AssetGlyph, Eyebrow, Hair, Spark } from '@/design/atoms';
+import { SiteNav } from '@/components/SiteNav';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,7 +50,7 @@ export default async function AssetPage({ params }: { params: Promise<Params> })
         fontFamily: 'Geist, system-ui',
       }}
     >
-      <NavBar />
+      <SiteNav active="/bubbles" />
 
       <main
         style={{
@@ -433,55 +434,4 @@ function ReceiptRow({ label, value, href, mono }: { label: string; value: string
   );
 }
 
-function NavBar() {
-  return (
-    <nav
-      style={{
-        padding: '14px 24px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        borderBottom: '1px solid rgba(255,255,255,0.05)',
-        backdropFilter: 'blur(20px)',
-        background: 'rgba(7,9,13,0.7)',
-        position: 'sticky',
-        top: 0,
-        zIndex: 5,
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-        <Link href="/" style={{ display: 'flex' }}>
-          <PodMark size={20} />
-        </Link>
-        <div style={{ fontSize: 13, color: POD.ink300, display: 'flex', gap: 18 }}>
-          <Link href="/" style={{ color: POD.ink300, textDecoration: 'none' }}>
-            Live scores
-          </Link>
-          <Link href="/bubbles" style={{ color: POD.ink300, textDecoration: 'none' }}>
-            Bubbles
-          </Link>
-          <Link href="/how-it-works" style={{ color: POD.ink300, textDecoration: 'none' }}>
-            How it works
-          </Link>
-          <Link href="/api/scores" style={{ color: POD.ink300, textDecoration: 'none' }}>
-            API
-          </Link>
-        </div>
-      </div>
-      <a
-        href="https://t.me/podttest_bot"
-        style={{
-          background: POD.lime,
-          color: POD.ink900,
-          padding: '8px 14px',
-          borderRadius: 10,
-          fontSize: 13,
-          fontWeight: 600,
-          textDecoration: 'none',
-        }}
-      >
-        Try on Telegram
-      </a>
-    </nav>
-  );
-}
+

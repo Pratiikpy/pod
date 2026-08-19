@@ -181,8 +181,21 @@ export function AssetGlyph({ symbol, size = 24 }: { symbol: string; size?: numbe
     ETH: { bg: '#627EEA', fg: '#fff', g: 'Ξ' },
     SOL: { bg: 'linear-gradient(135deg,#9945FF,#14F195)', fg: '#000', g: 'S' },
     USDC: { bg: '#2775CA', fg: '#fff', g: '$' },
+    // The rest of the tracked ETF universe, in each project's own brand colour.
+    XRP: { bg: '#23292F', fg: '#fff', g: 'X' },
+    DOGE: { bg: '#C2A633', fg: '#fff', g: 'D' },
+    AVAX: { bg: '#E84142', fg: '#fff', g: 'A' },
+    LINK: { bg: '#2A5ADA', fg: '#fff', g: 'L' },
+    LTC: { bg: '#345D9D', fg: '#fff', g: 'Ł' },
+    DOT: { bg: '#E6007A', fg: '#fff', g: 'P' },
+    HBAR: { bg: '#222222', fg: '#fff', g: 'H' },
   };
-  const m = map[symbol] ?? { bg: POD.ink600, fg: POD.ink100, g: '?' };
+  // Unknown symbols still get a readable mark rather than a question mark.
+  const m = map[symbol] ?? {
+    bg: POD.ink600,
+    fg: POD.ink100,
+    g: symbol.slice(0, 1).toUpperCase() || '?',
+  };
   return (
     <div
       style={{
