@@ -169,7 +169,10 @@ export function BubblesClient({ bubbles }: { bubbles: BubbleData[] }) {
       {/* The canvas takes whatever the header, title strip and footer leave, so the
           whole field is visible on a laptop without scrolling; the floor keeps it
           usable once a phone's chrome has taken its share. */}
-      <div style={{ flex: 1, position: 'relative', minHeight: 380 }}>
+      {/* `height: 0` is what makes flex-grow the only thing sizing this box: with an
+          auto height the canvas's own `height: 100%` resolves against the viewport
+          instead of the space left over, and the field overflows the fold. */}
+      <div style={{ flex: '1 1 auto', height: 0, position: 'relative', minHeight: 380 }}>
         <BubbleCanvas bubbles={bubbles} onSelect={setSelected} />
         {/* Keyboard + screen-reader fallback. Visually hidden until focused. */}
         <ul

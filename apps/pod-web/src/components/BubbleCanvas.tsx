@@ -107,10 +107,12 @@ export function BubbleCanvas({
       for (const n of nodes) {
         const dx = cx - n.x;
         const dy = cy - n.y;
-        // Strong enough to close the gap collisions open up, so the field reads as
-        // one cluster in the middle rather than a ring with a hole in it.
-        n.vx += dx * 0.0022;
-        n.vy += dy * 0.0022;
+        // Pull scales with radius so the heavyweights settle in the middle and the
+        // small caps orbit them. With a uniform pull all ten push out symmetrically
+        // and the field settles as a ring with a hole in the centre.
+        const pull = 0.0016 + (n.r / 120) * 0.0022;
+        n.vx += dx * pull;
+        n.vy += dy * pull;
         n.vx *= 0.94;
         n.vy *= 0.94;
         n.x += n.vx;
