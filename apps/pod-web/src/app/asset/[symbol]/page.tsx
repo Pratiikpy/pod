@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { fetchAllBubbleData, type BubbleData } from '@/lib/bubble-data';
-import { getLatestReceipt, type OnChainReceipt } from '@/lib/db';
-import { POD, scoreColor, scoreLabel, genSpark } from '@/design/tokens';
+import { getLatestReceipt, getScoreHistory, type OnChainReceipt, type HistoryPoint } from '@/lib/db';
+import { POD, scoreColor, scoreLabel } from '@/design/tokens';
 import { PodMark, ScoreGauge, AssetGlyph, Eyebrow, Hair, Spark } from '@/design/atoms';
 import { SiteNav } from '@/components/SiteNav';
 
@@ -39,7 +39,10 @@ export default async function AssetPage({ params }: { params: Promise<Params> })
   const data = all.find((b) => b.asset === sym);
   if (!data) notFound();
 
-  const receipt = await getLatestReceipt(sym);
+  const [receipt, history] = await Promise.all([
+    getLatestReceipt(sym),
+    getScoreHistory(sym, 30),
+  ]);
 
   return (
     <div
@@ -85,7 +88,7 @@ export default async function AssetPage({ params }: { params: Promise<Params> })
 
         {receipt && <ReceiptPanel receipt={receipt} />}
 
-        <ScoreHistory data={data} />
+        <ScoreHistory data={data} history={history} />
 
         <CTARow data={data} />
       </main>
@@ -283,16 +286,39 @@ function SourcesPanel({ data }: { data: BubbleData }) {
   );
 }
 
-function ScoreHistory({ data }: { data: BubbleData }) {
-  // Score history persistence is Phase-1 follow-up work. Until the daily
-  // cron has populated 30 days, we render a deterministic indicative trace
-  // seeded by the asset symbol so the page is not empty. Honest label below.
-  const seed = data.asset.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-  const series = genSpark(seed, 30).map((v) => Math.max(5, Math.min(95, v + (data.score - 50) * 0.3)));
+function ScoreHistory({ data, history }: { data: BubbleData; history: HistoryPoint[] }) {
   const c = scoreColor(data.score);
+  // Real recorded scores, oldest → newest. A single point cannot draw a line, so
+  // the section only appears once the daily job has recorded at least two.
+  const series = history.map((h) => h.podScore);
+  if (series.length < 2) {
+    return (
+      <section>
+        <Eyebrow>Score trace</Eyebrow>
+        <Hair color="rgba(255,255,255,0.06)" style={{ marginTop: 12, marginBottom: 18 }} />
+        <div
+          style={{
+            background: POD.ink850,
+            border: '1px solid rgba(255,255,255,0.05)',
+            borderRadius: 16,
+            padding: '20px 22px',
+            fontSize: 13,
+            color: POD.ink400,
+            lineHeight: 1.55,
+          }}
+        >
+          No recorded history for {data.asset} yet. The daily job at{' '}
+          <code className="mono" style={{ color: POD.ink200 }}>/api/cron/daily-signal</code> writes
+          one score per day; the trace appears here from the second run onward.
+        </div>
+      </section>
+    );
+  }
+  const first = history[0];
+  const days = history.length;
   return (
     <section>
-      <Eyebrow>30-day score trace</Eyebrow>
+      <Eyebrow>Score trace · {days} recorded {days === 1 ? 'day' : 'days'}</Eyebrow>
       <Hair color="rgba(255,255,255,0.06)" style={{ marginTop: 12, marginBottom: 18 }} />
       <div
         style={{
@@ -313,20 +339,13 @@ function ScoreHistory({ data }: { data: BubbleData }) {
           }}
           className="mono"
         >
-          <span>30d ago</span>
-          <span>today · {data.score}</span>
+          <span>{first ? first.date : ''} · {series[0]}</span>
+          <span>today · {series[series.length - 1]}</span>
         </div>
-        <div
-          style={{
-            marginTop: 14,
-            fontSize: 12,
-            color: POD.ink400,
-            lineHeight: 1.5,
-          }}
-        >
-          Indicative trace pending the daily-score backfill. The cron job at{' '}
-          <code className="mono" style={{ color: POD.ink200 }}>/api/cron/daily-signal</code> will
-          replace this with real history once 30 days of fires have landed.
+        <div style={{ marginTop: 14, fontSize: 12, color: POD.ink400, lineHeight: 1.5 }}>
+          Every point is a score this service actually published and anchored on-chain — read back
+          from{' '}
+          <code className="mono" style={{ color: POD.ink200 }}>/api/history/{data.asset}</code>.
         </div>
       </div>
     </section>
