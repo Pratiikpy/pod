@@ -71,3 +71,81 @@ export const fetchEtfFlowTable = unstable_cache(fetchEtfFlowTableInner, ['etf-fl
   revalidate: 600,
   tags: ['flows'],
 });
+
+/**
+ * The BTC spot-ETF flow series behind the homepage chart: the last 14 sessions
+ * of net creations/redemptions, plus the 30-day z-score of the latest print so
+ * the headline stat carries the same "how unusual is this" reading the score
+ * engine uses.
+ */
+export interface HeadlineFlow {
+  /** Net inflow per session in millions of USD, oldest → newest. */
+  series: number[];
+  /** Sum of the 14 sessions, in USD. */
+  net14d: number;
+  /** Sum of the 14 sessions before those, in USD — the comparison baseline. */
+  netPrior: number;
+  /** Most recent session's net inflow, in USD. */
+  today: number;
+  /** Standard deviations the latest print sits from its trailing mean. */
+  todayZ: number | null;
+  generatedAt: string;
+}
+
+async function fetchHeadlineFlowInner(): Promise<HeadlineFlow> {
+  const empty: HeadlineFlow = {
+    series: [],
+    net14d: 0,
+    netPrior: 0,
+    today: 0,
+    todayZ: null,
+    generatedAt: new Date().toISOString(),
+  };
+  const apiKeys = resolveSoSoValueKeys();
+  if (apiKeys.length === 0) return empty;
+  try {
+    const sso = new SoSoValue({ apiKeys });
+    const hist = await sso.etf.summaryHistory({ symbol: 'BTC', country_code: 'US', limit: 30 });
+    const rows = [...hist].reverse(); // API is latest-first
+    if (rows.length === 0) return empty;
+    const flows = rows.map((r) => r.total_net_inflow);
+    const last14 = flows.slice(-14);
+    const prior14 = flows.slice(-28, -14);
+    const latest = last14[last14.length - 1] ?? 0;
+    // Same shape as the engine's ETF source: latest against the days before it.
+    const baseline = flows.slice(0, -1);
+    let todayZ: number | null = null;
+    if (baseline.length >= 5) {
+      const mean = baseline.reduce((a, b) => a + b, 0) / baseline.length;
+      const variance =
+        baseline.reduce((a, b) => a + (b - mean) ** 2, 0) / (baseline.length - 1);
+      const sd = Math.sqrt(variance);
+      todayZ = sd > 0 ? (latest - mean) / sd : 0;
+    }
+    return {
+      series: last14.map((v) => v / 1_000_000),
+      net14d: last14.reduce((a, b) => a + b, 0),
+      netPrior: prior14.reduce((a, b) => a + b, 0),
+      today: latest,
+      todayZ,
+      generatedAt: new Date().toISOString(),
+    };
+  } catch {
+    return empty;
+  }
+}
+
+export const fetchHeadlineFlow = unstable_cache(fetchHeadlineFlowInner, ['headline-flow-v1'], {
+  revalidate: 600,
+  tags: ['flows'],
+});
+
+/** Compact USD for headline stats: 1_420_000_000 → "+$1.42B". */
+export function fmtUsdCompact(v: number): string {
+  const sign = v > 0 ? '+' : v < 0 ? '−' : '';
+  const a = Math.abs(v);
+  if (a >= 1_000_000_000) return `${sign}$${(a / 1_000_000_000).toFixed(2)}B`;
+  if (a >= 1_000_000) return `${sign}$${Math.round(a / 1_000_000)}M`;
+  if (a >= 1_000) return `${sign}$${Math.round(a / 1_000)}K`;
+  return `${sign}$${Math.round(a)}`;
+}

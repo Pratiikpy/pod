@@ -92,6 +92,8 @@ function toNum(v: number | string | null | undefined): number | undefined {
 
 export interface CurrencySnapshot {
   price?: number | undefined;
+  /** 24h price move as a percentage (the API reports a fraction). */
+  change24hPct?: number | undefined;
   marketcap?: number | undefined;
   fdv?: number | undefined;
   ath?: number | undefined;
@@ -142,8 +144,10 @@ export class CurrencyModule {
       cacheTtl: 5 * 60,
     });
     const d = result.data;
+    const change = toNum(d.change_pct_24h);
     return {
       price: toNum(d.price),
+      change24hPct: change === undefined ? undefined : change * 100,
       marketcap: toNum(d.marketcap),
       fdv: toNum(d.fdv),
       ath: toNum(d.ath),

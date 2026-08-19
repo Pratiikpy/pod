@@ -13,6 +13,10 @@ import {
 } from '@/design/atoms';
 import type { PodSignal } from '@pod/signal-engine';
 import { fetchPublicScores, type PublicScore } from '@/lib/scores';
+import { getBubble } from '@/lib/bubble-data';
+import { fetchHeadlineFlow, fmtUsdCompact } from '@/lib/etf-flows';
+import { fetchSpotPrices, fmtPrice, fmtPct } from '@/lib/prices';
+import { getScoreHistory } from '@/lib/db';
 
 export const revalidate = 600;
 
@@ -34,12 +38,54 @@ function summaryMatch(text: string, re: RegExp): string | null {
   return m && m[1] ? m[1] : null;
 }
 
+/** Human label for a signal source, matching the drawer's wording. */
+const SOURCE_LABEL: Record<string, string> = {
+  ETF_FLOW: 'ETF flow',
+  MACRO_EVENT: 'Macro',
+  NEWS_SENTIMENT: 'News',
+  BTC_TREASURY: 'Treasuries',
+  SOCIAL_SENTIMENT: 'Sentiment',
+  STABLECOIN_LIQUIDITY: 'Stablecoins',
+  VC_FUNDING: 'VC',
+};
+
 export default async function HomePage() {
-  const scores = await fetchPublicScores();
+  const HEADLINE: Array<{ asset: 'BTC' | 'ETH' | 'SOL'; name: string }> = [
+    { asset: 'BTC', name: 'Bitcoin' },
+    { asset: 'ETH', name: 'Ethereum' },
+    { asset: 'SOL', name: 'Solana' },
+  ];
+  const [scores, btcBubble, flow, prices, histories] = await Promise.all([
+    fetchPublicScores(),
+    getBubble('BTC'),
+    fetchHeadlineFlow(),
+    fetchSpotPrices(HEADLINE.map((h) => h.asset)),
+    Promise.all(HEADLINE.map((h) => getScoreHistory(h.asset, 30))),
+  ]);
   const findScore = (asset: string) => scores.find((s) => s.asset === asset);
   const btc = findScore('BTC');
   const eth = findScore('ETH');
   const sol = findScore('SOL');
+
+  // Each tile quotes the live spot price and the real recorded score trace; a
+  // tile is only rendered once its score exists.
+  const tiles = HEADLINE.flatMap((h, i) => {
+    const score = findScore(h.asset);
+    if (!score) return [];
+    const p = prices[h.asset];
+    const trace = (histories[i] ?? []).map((pt) => pt.podScore);
+    return [
+      {
+        asset: h.asset,
+        name: h.name,
+        score,
+        px: p ? fmtPrice(p.price) : '—',
+        pct: p ? fmtPct(p.changePct24h) : '',
+        // Two points make a line; below that the trace would be a flat stub.
+        spark: trace.length >= 2 ? trace : [score.podScore, score.podScore],
+      },
+    ];
+  });
 
   // The flagship narration uses the BTC reasoning, with the ETF flow citation
   // pulled out as a highlighted span if present.
@@ -48,9 +94,20 @@ export default async function HomePage() {
     summaryMatch(headlineText, /(-\$[\d.]+[BMK])/) ?? null;
   const headlineWithoutFlow = flowCitation ? headlineText.replace(flowCitation, '___FLOW___') : headlineText;
 
-  // 14-day flow series. In production this would be the live SoSoValue ETF
-  // summary-history. Here we use a deterministic bar series until that wiring lands.
-  const flowSeries = [-180, -90, 40, 120, 250, 90, 180, 60, 220, 140, 310, 240, 287, 381];
+  // Real BTC spot-ETF net flow, in millions, oldest → newest.
+  const flowSeries = flow.series;
+
+  // The chips are the actual per-source contributions behind the BTC score, so
+  // they always agree with the drawer and the per-asset page.
+  const chips = (btcBubble?.contributions ?? [])
+    .filter((c) => c.weight > 0)
+    .sort((a, b) => Math.abs(b.zScore * b.weight) - Math.abs(a.zScore * a.weight))
+    .slice(0, 5)
+    .map((c) => ({
+      src: SOURCE_LABEL[c.source] ?? c.source,
+      val: `${c.zScore >= 0 ? '+' : '−'}${Math.abs(c.zScore).toFixed(2)}σ`,
+      tone: (c.zScore > 0 ? 'up' : c.zScore < 0 ? 'down' : 'neutral') as 'up' | 'down' | 'neutral',
+    }));
 
   return (
     <div
@@ -180,42 +237,19 @@ export default async function HomePage() {
             gap: 14,
           }}
         >
-          {btc && (
+          {tiles.map((t) => (
             <ScoreTile
-              asset="BTC"
-              name="Bitcoin"
-              score={btc.podScore}
-              delta={deltaString(btc)}
-              px="$108,420"
-              pct="+2.3%"
-              spark={genSpark(7, 60)}
-              down={isDownSignal(btc.direction)}
+              key={t.asset}
+              asset={t.asset}
+              name={t.name}
+              score={t.score.podScore}
+              delta={deltaString(t.score)}
+              px={t.px}
+              pct={t.pct}
+              spark={t.spark}
+              down={isDownSignal(t.score.direction)}
             />
-          )}
-          {eth && (
-            <ScoreTile
-              asset="ETH"
-              name="Ethereum"
-              score={eth.podScore}
-              delta={deltaString(eth)}
-              px="$3,914"
-              pct="+1.7%"
-              spark={genSpark(13, 60)}
-              down={isDownSignal(eth.direction)}
-            />
-          )}
-          {sol && (
-            <ScoreTile
-              asset="SOL"
-              name="Solana"
-              score={sol.podScore}
-              delta={deltaString(sol)}
-              px="$182.10"
-              pct="−0.8%"
-              spark={genSpark(29, 60)}
-              down={isDownSignal(sol.direction)}
-            />
-          )}
+          ))}
         </div>
       </div>
 
@@ -277,11 +311,11 @@ export default async function HomePage() {
             )}
           </p>
           <div style={{ display: 'flex', gap: 10, marginTop: 18, flexWrap: 'wrap' }}>
-            <Citation src="ETF flow" val={flowCitation ?? '—'} tone="up" />
-            <Citation src="Macro" val="CPI clear" />
-            <Citation src="Treasuries" val="MSTR +1.2k BTC" tone="up" />
-            <Citation src="Sentiment" val="+0.62" tone="up" />
-            <Citation src="VC" val="−18%" tone="down" />
+            {chips.length > 0 ? (
+              chips.map((c) => <Citation key={c.src} src={c.src} val={c.val} tone={c.tone} />)
+            ) : (
+              <Citation src="Sources" val="no live data" />
+            )}
           </div>
           <div
             style={{
@@ -337,8 +371,18 @@ export default async function HomePage() {
               justifyContent: 'space-between',
             }}
           >
-            <Stat label="14d net" val="+$1.42B" tone="ok" hint="vs −$210M prior" />
-            <Stat label="Today" val="+$381M" tone="ok" hint="2.84σ" />
+            <Stat
+              label="14d net"
+              val={flowSeries.length ? fmtUsdCompact(flow.net14d) : '—'}
+              tone={flow.net14d >= 0 ? 'ok' : 'down'}
+              hint={flowSeries.length ? `vs ${fmtUsdCompact(flow.netPrior)} prior` : 'no live data'}
+            />
+            <Stat
+              label="Latest session"
+              val={flowSeries.length ? fmtUsdCompact(flow.today) : '—'}
+              tone={flow.today >= 0 ? 'ok' : 'down'}
+              hint={flow.todayZ === null ? '' : `${flow.todayZ >= 0 ? '+' : '−'}${Math.abs(flow.todayZ).toFixed(2)}σ`}
+            />
           </div>
         </div>
       </div>
