@@ -7,28 +7,69 @@ import type { BubbleData } from '@/lib/bubble-data';
  * Q&A) and personality-flavored score narration. Every prompt forbids
  * inventing numbers: answers must come from the POD data passed in.
  */
-type Provider = { client: OpenAI; model: string };
+type Provider = { name: string; client: OpenAI; model: string };
 
-function getProvider(): Provider | null {
+/**
+ * Per-provider budget. The Telegram webhook has ~55s before grammY gives up, so
+ * a stalled provider must fail fast enough to leave the next one room to answer.
+ */
+const PROVIDER_TIMEOUT_MS = 20_000;
+
+/**
+ * Providers in preference order. Having a key is not the same as the provider
+ * working — 0G returns 402 once its balance runs out, and a NIM model can stall
+ * — so callers walk this list and move on when one fails at request time.
+ */
+function getProviders(): Provider[] {
+  const providers: Provider[] = [];
   const og = process.env['OG_API_KEY'];
   if (og) {
-    return {
-      client: new OpenAI({ apiKey: og, baseURL: process.env['OG_BASE_URL'] ?? 'https://router-api.0g.ai/v1' }),
+    providers.push({
+      name: '0g',
+      client: new OpenAI({
+        apiKey: og,
+        baseURL: process.env['OG_BASE_URL'] ?? 'https://router-api.0g.ai/v1',
+        timeout: PROVIDER_TIMEOUT_MS,
+        maxRetries: 0,
+      }),
       model: process.env['OG_MODEL'] ?? '0gm-1.0-35b-a3b',
-    };
+    });
   }
   const nv = process.env['NVIDIA_API_KEY'];
   if (nv) {
-    return {
-      client: new OpenAI({ apiKey: nv, baseURL: process.env['NVIDIA_BASE_URL'] ?? 'https://integrate.api.nvidia.com/v1' }),
-      model: process.env['NVIDIA_MODEL'] ?? 'meta/llama-3.3-70b-instruct',
-    };
+    providers.push({
+      name: 'nvidia',
+      client: new OpenAI({
+        apiKey: nv,
+        baseURL: process.env['NVIDIA_BASE_URL'] ?? 'https://integrate.api.nvidia.com/v1',
+        timeout: PROVIDER_TIMEOUT_MS,
+        maxRetries: 0,
+      }),
+      model: process.env['NVIDIA_MODEL'] ?? 'meta/llama-3.1-70b-instruct',
+    });
+  }
+  return providers;
+}
+
+/** Run `call` against each provider in turn; the first non-empty reply wins. */
+async function withFallback(
+  label: string,
+  call: (p: Provider) => Promise<string | null>,
+): Promise<string | null> {
+  for (const p of getProviders()) {
+    try {
+      const text = await call(p);
+      if (text) return text;
+      console.error(`[llm] ${label}: ${p.name} returned an empty completion`);
+    } catch (err) {
+      console.error(`[llm] ${label}: ${p.name} failed:`, err);
+    }
   }
   return null;
 }
 
 export function llmAvailable(): boolean {
-  return getProvider() !== null;
+  return getProviders().length > 0;
 }
 
 const LANG_INSTRUCTION: Record<string, string> = {
@@ -59,9 +100,7 @@ export async function askPod(
   grounding: string,
   lang = 'en',
 ): Promise<string | null> {
-  const p = getProvider();
-  if (!p) return null;
-  try {
+  return withFallback('askPod', async (p) => {
     const res = await p.client.chat.completions.create({
       model: p.model,
       messages: [
@@ -81,10 +120,7 @@ export async function askPod(
       max_tokens: 2000,
     });
     return res.choices[0]?.message?.content?.trim() || null;
-  } catch (err) {
-    console.error('[llm] askPod failed:', err);
-    return null;
-  }
+  });
 }
 
 const PERSONALITY_PROMPT: Record<string, string> = {
@@ -99,9 +135,7 @@ export async function narrateScore(
   personality = 'PROFESSOR',
   lang = 'en',
 ): Promise<string | null> {
-  const p = getProvider();
-  if (!p) return null;
-  try {
+  return withFallback('narrateScore', async (p) => {
     const res = await p.client.chat.completions.create({
       model: p.model,
       messages: [
@@ -118,8 +152,5 @@ export async function narrateScore(
       max_tokens: 1200,
     });
     return res.choices[0]?.message?.content?.trim() || null;
-  } catch (err) {
-    console.error('[llm] narrateScore failed:', err);
-    return null;
-  }
+  });
 }
