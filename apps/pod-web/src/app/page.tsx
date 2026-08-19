@@ -17,6 +17,7 @@ import { getBubble } from '@/lib/bubble-data';
 import { fetchHeadlineFlow, fmtUsdCompact } from '@/lib/etf-flows';
 import { fetchSpotPrices, fmtPrice, fmtPct } from '@/lib/prices';
 import { getScoreHistory } from '@/lib/db';
+import { SiteNav } from '@/components/SiteNav';
 
 /** Read through the shared 10-minute score cache, like `/bubbles` and
  *  `/api/scores`, so every surface quotes the same numbers at the same moment. */
@@ -120,82 +121,7 @@ export default async function HomePage() {
         minHeight: '100vh',
       }}
     >
-      {/* ── Nav ────────────────────────────────────────────────────────── */}
-      <div
-        style={{
-          padding: '20px 36px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          borderBottom: '1px solid rgba(255,255,255,0.05)',
-          position: 'sticky',
-          top: 0,
-          zIndex: 10,
-          backdropFilter: 'blur(20px)',
-          background: 'rgba(7,9,13,0.7)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 30 }}>
-          <PodMark size={20} />
-          <div style={{ display: 'flex', gap: 22, fontSize: 13, color: POD.ink300 }}>
-            <span style={{ color: POD.ink50, fontWeight: 500 }}>Live scores</span>
-            <a href="/bubbles" style={{ color: POD.ink300, textDecoration: 'none' }}>
-              Bubbles
-            </a>
-            <a href="/leaderboard" style={{ color: POD.ink300, textDecoration: 'none' }}>
-              Leaderboard
-            </a>
-            <a href="/flows" style={{ color: POD.ink300, textDecoration: 'none' }}>
-              ETF flows
-            </a>
-            <a href="/ssi" style={{ color: POD.ink300, textDecoration: 'none' }}>
-              SSI
-            </a>
-            <a href="/intel" style={{ color: POD.ink300, textDecoration: 'none' }}>
-              Intel
-            </a>
-            <a href="/how-it-works" style={{ color: POD.ink300, textDecoration: 'none' }}>
-              How it works
-            </a>
-            <a
-              href="/api/scores"
-              style={{
-                color: POD.ink300,
-                textDecoration: 'none',
-                cursor: 'pointer',
-              }}
-            >
-              API
-            </a>
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <a style={{ fontSize: 13, color: POD.ink300, textDecoration: 'none' }}>github</a>
-          <a
-            href="https://t.me/podttest_bot"
-            style={{
-              border: 0,
-              background: POD.lime,
-              color: POD.ink900,
-              padding: '9px 16px',
-              borderRadius: 10,
-              fontSize: 13,
-              fontWeight: 600,
-              fontFamily: 'inherit',
-              cursor: 'pointer',
-              display: 'inline-flex',
-              gap: 6,
-              alignItems: 'center',
-              textDecoration: 'none',
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12">
-              <path d="M2 2l8 4-8 4 2-4z" fill="currentColor" />
-            </svg>
-            Try on Telegram
-          </a>
-        </div>
-      </div>
+      <SiteNav active="/" />
 
       {/* ── Hero ───────────────────────────────────────────────────────── */}
       <div style={{ padding: '70px 36px 40px', maxWidth: 1080, margin: '0 auto' }}>

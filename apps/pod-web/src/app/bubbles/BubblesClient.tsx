@@ -6,7 +6,8 @@ import { BubbleCanvas } from '@/components/BubbleCanvas';
 import { BubbleDrawer } from '@/components/BubbleDrawer';
 import type { BubbleData } from '@/lib/bubble-data';
 import { POD } from '@/design/tokens';
-import { PodMark, Eyebrow } from '@/design/atoms';
+import { Eyebrow } from '@/design/atoms';
+import { SiteNav } from '@/components/SiteNav';
 
 export function BubblesClient({ bubbles }: { bubbles: BubbleData[] }) {
   const [selected, setSelected] = useState<BubbleData | null>(null);
@@ -24,72 +25,7 @@ export function BubblesClient({ bubbles }: { bubbles: BubbleData[] }) {
         flexDirection: 'column',
       }}
     >
-      {/* Header */}
-      <div
-        style={{
-          padding: '14px 24px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          borderBottom: '1px solid rgba(255,255,255,0.05)',
-          backdropFilter: 'blur(20px)',
-          background: 'rgba(7,9,13,0.7)',
-          zIndex: 5,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-          <Link href="/" style={{ display: 'flex' }}>
-            <PodMark size={20} />
-          </Link>
-          <div style={{ fontSize: 13, color: POD.ink300, display: 'flex', gap: 18 }}>
-            <Link href="/" style={{ color: POD.ink300, textDecoration: 'none' }}>
-              Live scores
-            </Link>
-            <span style={{ color: POD.ink50, fontWeight: 500 }}>Bubbles</span>
-            <Link href="/leaderboard" style={{ color: POD.ink300, textDecoration: 'none' }}>
-              Leaderboard
-            </Link>
-            <Link href="/flows" style={{ color: POD.ink300, textDecoration: 'none' }}>
-              ETF flows
-            </Link>
-            <Link href="/ssi" style={{ color: POD.ink300, textDecoration: 'none' }}>
-              SSI
-            </Link>
-            <Link href="/intel" style={{ color: POD.ink300, textDecoration: 'none' }}>
-              Intel
-            </Link>
-            <Link href="/how-it-works" style={{ color: POD.ink300, textDecoration: 'none' }}>
-              How it works
-            </Link>
-            <Link href="/api/scores" style={{ color: POD.ink300, textDecoration: 'none' }}>
-              API
-            </Link>
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <Eyebrow color={POD.ink400}>10 ETF assets · live</Eyebrow>
-          <a
-            href="https://t.me/podttest_bot"
-            style={{
-              background: POD.lime,
-              color: POD.ink900,
-              padding: '8px 14px',
-              borderRadius: 10,
-              fontSize: 13,
-              fontWeight: 600,
-              textDecoration: 'none',
-              display: 'inline-flex',
-              gap: 6,
-              alignItems: 'center',
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12">
-              <path d="M2 2l8 4-8 4 2-4z" fill="currentColor" />
-            </svg>
-            Try on Telegram
-          </a>
-        </div>
-      </div>
+      <SiteNav active="/bubbles" />
 
       {/* Honest banner when SoSoValue can't be reached */}
       {allFallback && (
