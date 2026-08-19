@@ -18,7 +18,9 @@ import { fetchHeadlineFlow, fmtUsdCompact } from '@/lib/etf-flows';
 import { fetchSpotPrices, fmtPrice, fmtPct } from '@/lib/prices';
 import { getScoreHistory } from '@/lib/db';
 
-export const revalidate = 600;
+/** Read through the shared 10-minute score cache, like `/bubbles` and
+ *  `/api/scores`, so every surface quotes the same numbers at the same moment. */
+export const dynamic = 'force-dynamic';
 
 // Map directional signals to delta string + tone for the score tiles.
 function deltaString(signal: PublicScore): string {
