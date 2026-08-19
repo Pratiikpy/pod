@@ -6,27 +6,27 @@ import { SiteNav } from '@/components/SiteNav';
 export const metadata = {
   title: 'How POD scores are calculated · POD',
   description:
-    'POD scores combine five SoSoValue data sources into one number. This page documents the math, the weights, and the limits.',
+    'POD scores combine six data sources into one number. This page documents the math, the weights, and the limits.',
 };
 
 const SOURCES = [
   {
     key: 'ETF_FLOW',
     label: 'ETF flow',
-    weight: 0.40,
+    weight: 0.30,
     api: '/etfs/summary-history',
     measures:
-      'Daily net inflow / outflow on spot crypto ETFs. Compares latest day against the trailing 30-day mean and standard deviation.',
+      'Daily net inflow / outflow on spot crypto ETFs. Compares the latest session against the trailing 30-day mean and standard deviation.',
     why:
       'ETF flow is the cleanest measure of institutional appetite. A single $300M outflow day matters more than a thousand retail tweets.',
   },
   {
     key: 'MACRO_EVENT',
     label: 'Macro events',
-    weight: 0.20,
+    weight: 0.15,
     api: '/macro/events',
     measures:
-      'Tier-1 macro events (FOMC, CPI, NFP) scheduled in the next 48 hours. Pre-positions defensively when a high-impact print is imminent.',
+      'Tier-1 macro events (FOMC, CPI, NFP) scheduled in the next 48 hours. Leans defensive as a high-impact print approaches, and stays silent when the calendar is clear.',
     why:
       'Even a strong asset-specific signal gets overruled when an FOMC print is 6 hours away. POD respects that.',
   },
@@ -36,29 +36,39 @@ const SOURCES = [
     weight: 0.15,
     api: '/news',
     measures:
-      'Recent featured news per asset, scored for sentiment polarity and confidence. Decays exponentially with age.',
+      'Coin-tagged news from the last three days, scored for sentiment polarity and weighted by recency.',
     why:
-      'Headlines are noisy. They get the smallest weight, but a unanimous sentiment shift across 20 stories matters.',
+      'Headlines are noisy, but a unanimous sentiment shift across a day of coverage is worth something.',
   },
   {
     key: 'BTC_TREASURY',
     label: 'BTC treasuries',
-    weight: 0.20,
+    weight: 0.10,
     api: '/btc-treasuries',
     measures:
-      'Velocity of public-company BTC purchases over the last 30 days. Rising = real fiduciary capital deploying. Applies to BTC; passes through 0 for other assets.',
+      'Corporate BTC accumulation across the largest public holders over the last 30 days. BTC only; contributes nothing for other assets.',
     why:
-      'When MicroStrategy or a sovereign buys $500M of BTC, that is patient capital. The signal is slow but stickier than ETF flow.',
+      'When a public company buys $500M of BTC, that is patient capital. The signal is slow but stickier than ETF flow.',
   },
   {
-    key: 'VC_FUNDING',
-    label: 'VC funding',
-    weight: 0.05,
-    api: '/fundraising/list',
+    key: 'STABLECOIN_LIQUIDITY',
+    label: 'Stablecoin liquidity',
+    weight: 0.10,
+    api: '/analyses/stablecoin_total_market_cap',
     measures:
-      'VC capital deployed into crypto sectors over the last 30 days vs the prior 30 days. Cycle indicator.',
+      'Change in total stablecoin supply against its recent history — the dry powder sitting on exchanges.',
     why:
-      'Fundraising leads narratives by months. Small weight because it is structural, not tactical.',
+      'Rising stablecoin supply is capital staged to buy. It moves before price does, and it is market-wide rather than per-coin.',
+  },
+  {
+    key: 'SOCIAL_SENTIMENT',
+    label: 'Social sentiment',
+    weight: 0.07,
+    api: 'CoinGecko /coins/{id}',
+    measures:
+      'Per-coin crowd vote (share of participants voting bullish), centred on 50% and scaled to standard deviations.',
+    why:
+      'The fast retail counterweight to the five slower institutional sources. It gets the smallest weight on purpose.',
   },
 ] as const;
 
@@ -109,7 +119,7 @@ export default function HowItWorks() {
               maxWidth: 640,
             }}
           >
-            POD scores blend five SoSoValue data sources into one number from 0 to 100.
+            POD scores blend six institutional data sources into one number from 0 to 100.
             No magic, no model weights kept secret. The full pipeline is documented below.
           </p>
         </section>
@@ -132,17 +142,19 @@ podScore   = round(100 / (1 + e^(-compositeZ)))`}
           </p>
         </Section>
 
-        {/* The 5 sources */}
-        <Section eyebrow="The five sources">
+        {/* The six sources */}
+        <Section eyebrow="The six sources">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             {SOURCES.map((s) => (
               <SourceCard key={s.key} source={s} />
             ))}
           </div>
           <p style={{ marginTop: 14, fontSize: 13, color: POD.ink400, lineHeight: 1.55 }}>
-            Weights sum to 1.00. Per-asset weights can shift when a source returns no data
-            (e.g. <Mono>BTC_TREASURY</Mono> contributes 0 weight for ETH because it does not
-            apply); composites then renormalize across the contributing sources.
+            The composite divides by the weights that actually returned data, so a source with
+            nothing to say contributes nothing rather than dragging the score toward neutral.
+            <Mono>BTC_TREASURY</Mono> carries 0 weight for every asset except BTC, and any source
+            can go quiet on a given day — the per-asset breakdown on each coin&apos;s page shows
+            exactly which ones counted.
           </p>
         </Section>
 
