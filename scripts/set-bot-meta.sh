@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Set Telegram bot metadata (commands, description, short description).
 set -e
-TOKEN="${TELEGRAM_BOT_TOKEN:-8744661042:AAHY4_Vi_yeSsf7JxRfDtfWTBr39BmXiycs}"
+TOKEN="${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN is required (source .env first)}"
 
 curl -s -X POST "https://api.telegram.org/bot${TOKEN}/setMyCommands" \
   -H "Content-Type: application/json; charset=utf-8" \
