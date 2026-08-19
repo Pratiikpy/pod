@@ -291,7 +291,7 @@ podScore   = round(100 / (1 + e^(-compositeZ)))`}
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 18 }}>
             <CTA href="/bubbles" primary>See live scores →</CTA>
             <CTA href="/api/scores">Raw API</CTA>
-            <CTA href="https://github.com/Pratiikpy/Stealth-AP">Source on GitHub</CTA>
+            <CTA href="https://github.com/Pratiikpy/pod">Source on GitHub</CTA>
           </div>
         </Section>
       </main>

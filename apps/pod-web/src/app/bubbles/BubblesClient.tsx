@@ -166,7 +166,10 @@ export function BubblesClient({ bubbles }: { bubbles: BubbleData[] }) {
       </div>
 
       {/* Canvas */}
-      <div style={{ flex: 1, position: 'relative', minHeight: 600 }}>
+      {/* The canvas takes whatever the header, title strip and footer leave, so the
+          whole field is visible on a laptop without scrolling; the floor keeps it
+          usable once a phone's chrome has taken its share. */}
+      <div style={{ flex: 1, position: 'relative', minHeight: 380 }}>
         <BubbleCanvas bubbles={bubbles} onSelect={setSelected} />
         {/* Keyboard + screen-reader fallback. Visually hidden until focused. */}
         <ul
@@ -216,7 +219,7 @@ export function BubblesClient({ bubbles }: { bubbles: BubbleData[] }) {
             Raw API
           </Link>
           <a
-            href="https://github.com/Pratiikpy/Stealth-AP"
+            href="https://github.com/Pratiikpy/pod"
             style={{ color: POD.ink400, textDecoration: 'none' }}
           >
             Source

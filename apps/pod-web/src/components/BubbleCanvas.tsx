@@ -60,8 +60,8 @@ export function BubbleCanvas({
       const angle = (i / bubbles.length) * Math.PI * 2;
       return {
         ...b,
-        x: w / 2 + Math.cos(angle) * (Math.min(w, h) * 0.25),
-        y: h / 2 + Math.sin(angle) * (Math.min(w, h) * 0.25),
+        x: w / 2 + Math.cos(angle) * (Math.min(w, h) * 0.18),
+        y: h / 2 + Math.sin(angle) * (Math.min(w, h) * 0.18),
         vx: (Math.random() - 0.5) * 0.4,
         vy: (Math.random() - 0.5) * 0.4,
         r,
@@ -107,8 +107,10 @@ export function BubbleCanvas({
       for (const n of nodes) {
         const dx = cx - n.x;
         const dy = cy - n.y;
-        n.vx += dx * 0.0006;
-        n.vy += dy * 0.0006;
+        // Strong enough to close the gap collisions open up, so the field reads as
+        // one cluster in the middle rather than a ring with a hole in it.
+        n.vx += dx * 0.0022;
+        n.vy += dy * 0.0022;
         n.vx *= 0.94;
         n.vy *= 0.94;
         n.x += n.vx;
