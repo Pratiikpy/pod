@@ -15,9 +15,13 @@ describe('actionJson', () => {
     expect(out).toBe('{"a":1,"d":"x"}');
   });
 
-  it('serialises bigints as strings', () => {
+  it('serialises bigints as unquoted integers, as SoDEX requires for uint64', () => {
     const out = actionJson({ accountID: 1234567890n, ts: 1n });
-    expect(out).toBe('{"accountID":"1234567890","ts":"1"}');
+    expect(out).toBe('{"accountID":1234567890,"ts":1}');
+  });
+
+  it('refuses a bigint it cannot encode exactly', () => {
+    expect(() => actionJson({ id: 2n ** 60n })).toThrow(RangeError);
   });
 });
 

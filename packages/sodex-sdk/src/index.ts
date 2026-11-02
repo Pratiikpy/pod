@@ -1,6 +1,7 @@
 import { SoDEXClient, type SoDEXClientConfig } from './client.js';
 import { SpotAPI } from './spot.js';
 import { PerpsAPI } from './perps.js';
+import { PublicAPI } from './public.js';
 import { createSigner, type SoDEXSigner } from './signing.js';
 import type { LocalAccount } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -13,6 +14,11 @@ export * from './signing.js';
 export { SoDEXClient, SoDEXAPIError } from './client.js';
 export { SpotAPI } from './spot.js';
 export { PerpsAPI } from './perps.js';
+export * from './builder.js';
+export * from './decimal.js';
+export * from './results.js';
+export * from './market.js';
+export * from './public.js';
 
 /**
  * High-level SoDEX SDK — unified entry point for spot + perps.
@@ -38,11 +44,14 @@ export class SoDEX {
   readonly client: SoDEXClient;
   readonly spot: SpotAPI;
   readonly perps: PerpsAPI;
+  /** Cross-engine endpoints: accounts, API keys, builder codes. */
+  readonly public: PublicAPI;
 
   constructor(config: SoDEXClientConfig) {
     this.client = new SoDEXClient(config);
     this.spot = new SpotAPI(this.client);
     this.perps = new PerpsAPI(this.client);
+    this.public = new PublicAPI(this.client);
   }
 
   /** Quick constructor from a hex private key. Optional apiKeyName for X-API-Key header. */

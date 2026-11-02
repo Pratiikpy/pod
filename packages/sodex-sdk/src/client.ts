@@ -67,6 +67,10 @@ export class SoDEXClient {
   get spotBase() {
     return SPOT_BASE;
   }
+  /** Base path for the cross-engine public endpoints (`/user/{address}/...`). */
+  get publicBase() {
+    return '/api/v1';
+  }
   get perpsBase() {
     return PERPS_BASE;
   }
@@ -141,6 +145,44 @@ export class SoDEXClient {
       })) as T;
     } catch (err: unknown) {
       throw this.toApiError(err, path);
+    }
+  }
+
+  /**
+   * POST for account-level actions whose signature the caller already holds
+   * (a wallet signs these in the browser, so no signer lives in this client).
+   */
+  async postWithHeaders<T = unknown>(
+    path: string,
+    body: unknown,
+    headers: Record<string, string>,
+  ): Promise<T> {
+    let res: T;
+    try {
+      res = (await $fetch(path, {
+        method: 'POST',
+        baseURL: this.baseUrl,
+        timeout: this.timeout,
+        body: actionJson(body),
+        headers,
+      })) as T;
+    } catch (err: unknown) {
+      throw this.toApiError(err, path);
+    }
+    // The gateway rejects with HTTP 200 and `code` != 0, so a clean fetch is not success.
+    this.assertEnvelopeOk(res, path);
+    return res;
+  }
+
+  /** Throws when a gateway envelope carries a non-zero `code`. */
+  assertEnvelopeOk(res: unknown, path: string): void {
+    const env = res as { code?: number; error?: string; message?: string } | null;
+    if (env && typeof env.code === 'number' && env.code !== 0) {
+      throw new SoDEXAPIError(
+        `SoDEX rejected ${path} (code ${env.code}): ${env.error ?? env.message ?? 'no detail'}`,
+        200,
+        env.code,
+      );
     }
   }
 

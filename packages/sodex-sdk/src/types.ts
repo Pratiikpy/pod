@@ -24,6 +24,40 @@ export const NETWORK_CONFIG: Record<
   },
 };
 
+// ── Transfers ───────────────────────────────────────────────────────────────
+
+/** TransferAssetTypeEnum integer values. The wire format takes the integer, not the name. */
+export const TRANSFER_TYPE = {
+  EVM_DEPOSIT: 0,
+  PERPS_DEPOSIT: 1,
+  EVM_WITHDRAW: 2,
+  PERPS_WITHDRAW: 3,
+  INTERNAL: 4,
+  SPOT_WITHDRAW: 5,
+} as const;
+export type TransferTypeName = keyof typeof TRANSFER_TYPE;
+
+export interface TransferAssetParams {
+  /** Unique request id; sent as an unquoted uint64. */
+  id: number | bigint | string;
+  fromAccountID: number | bigint;
+  /** 999 targets the EVM chain or the other engine, depending on `type`. */
+  toAccountID: number | bigint;
+  coinID: number | bigint;
+  /** Human-readable decimal string, within the coin's precision. */
+  amount: string;
+  type: TransferTypeName | number;
+}
+
+/** Normalises a transfer to the wire shape: integer id, integer type. */
+export function toWireTransfer(p: TransferAssetParams) {
+  const id = typeof p.id === 'string' ? Number(p.id) : Number(p.id);
+  if (!Number.isSafeInteger(id) || id <= 0) throw new RangeError(`transfer id must be a positive safe integer, got ${p.id}`);
+  const type = typeof p.type === 'number' ? p.type : TRANSFER_TYPE[p.type];
+  if (type === undefined) throw new RangeError(`unknown transfer type ${String(p.type)}`);
+  return { id, fromAccountID: p.fromAccountID, toAccountID: p.toAccountID, coinID: p.coinID, amount: p.amount, type };
+}
+
 // ── Order types ─────────────────────────────────────────────────────────────
 
 export type OrderSide = 'BUY' | 'SELL';

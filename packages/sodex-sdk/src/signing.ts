@@ -56,7 +56,8 @@ export interface CreateSignerOptions {
 }
 
 let lastNonce = 0n;
-function defaultNonce(): bigint {
+/** Monotonic millisecond nonce shared by trading and account-level actions. */
+export function defaultNonce(): bigint {
   const ts = BigInt(Date.now());
   if (ts <= lastNonce) {
     lastNonce = lastNonce + 1n;
@@ -74,7 +75,14 @@ function defaultNonce(): bigint {
 export function actionJson(value: unknown): string {
   return JSON.stringify(value, (_key, v) => {
     if (v === null || v === undefined) return undefined;
-    if (typeof v === 'bigint') return v.toString();
+    if (typeof v === 'bigint') {
+      // SoDEX encodes uint64 as an unquoted JSON integer, and the signature
+      // hashes the exact bytes. A quoted ID would hash differently and be rejected.
+      if (v < BigInt(Number.MIN_SAFE_INTEGER) || v > BigInt(Number.MAX_SAFE_INTEGER)) {
+        throw new RangeError(`uint64 value ${v} is beyond the safe integer range and cannot be encoded exactly`);
+      }
+      return Number(v);
+    }
     return v;
   });
 }

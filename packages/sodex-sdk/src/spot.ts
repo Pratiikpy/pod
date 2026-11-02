@@ -1,4 +1,7 @@
 import type { SoDEXClient } from './client.js';
+import { type TransferAssetParams, toWireTransfer } from './types.js';
+import { canonicalDecimal } from './decimal.js';
+import { type BuilderParams, assertBuilderParams, toWireBuilder } from './builder.js';
 
 /**
  * Spot trading client. Endpoints + action names match the official Go SDK
@@ -97,7 +100,10 @@ export class SpotAPI {
       quantity?: string;
       funds?: string;
     }>;
+    /** Builder fee applied to every order in the batch. Must be the last wire field. */
+    builder?: BuilderParams;
   }) {
+    if (params.builder) assertBuilderParams(params.builder, 'spot');
     const sideMap = { BUY: 1, SELL: 2 } as const;
     const typeMap = { LIMIT: 1, MARKET: 2 } as const;
     const tifMap = { GTC: 1, FOK: 2, IOC: 3, GTX: 4 } as const;
@@ -111,11 +117,13 @@ export class SpotAPI {
           type: typeMap[o.type],
           timeInForce: tifMap[o.timeInForce],
         };
-        if (o.price !== undefined) out['price'] = o.price;
-        if (o.quantity !== undefined) out['quantity'] = o.quantity;
-        if (o.funds !== undefined) out['funds'] = o.funds;
+        if (o.price !== undefined) out['price'] = canonicalDecimal(o.price);
+        if (o.quantity !== undefined) out['quantity'] = canonicalDecimal(o.quantity);
+        if (o.funds !== undefined) out['funds'] = canonicalDecimal(o.funds);
         return out;
       }),
+      // Spread keeps `builder` after `orders`: the signature hashes this exact key order.
+      ...(params.builder ? { builder: toWireBuilder(params.builder) } : {}),
     };
     return this.client.postSigned('spot', `${this.client.spotBase}/trade/orders/batch`, {
       type: 'batchNewOrder',
@@ -151,17 +159,10 @@ export class SpotAPI {
   }
 
   /** Action type: "transferAsset" */
-  transferAsset(params: {
-    id: string;
-    fromAccountID: number | bigint;
-    toAccountID: number | bigint;
-    coinID: number | bigint;
-    amount: string;
-    type: string;
-  }) {
+  transferAsset(params: TransferAssetParams) {
     return this.client.postSigned('spot', `${this.client.spotBase}/accounts/transfers`, {
       type: 'transferAsset',
-      params,
+      params: toWireTransfer(params),
     });
   }
 
@@ -172,5 +173,17 @@ export class SpotAPI {
       `${this.client.spotBase}/trade/orders/schedule-cancel`,
       { type: 'scheduleCancel', params },
     );
+  }
+
+  /**
+   * Revoke an API key from the spot engine. Must be signed by the MASTER wallet
+   * on a client built WITHOUT an apiKeyName, and repeated on perps: a revoke on
+   * one engine does not revoke the other.
+   */
+  revokeAPIKey(params: { accountID: number | bigint; name: string }) {
+    return this.client.deleteSigned('spot', `${this.client.spotBase}/accounts/api-keys`, {
+      type: 'revokeAPIKey',
+      params,
+    });
   }
 }

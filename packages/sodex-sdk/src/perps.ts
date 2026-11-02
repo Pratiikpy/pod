@@ -1,4 +1,6 @@
 import type { SoDEXClient } from './client.js';
+import { type TransferAssetParams, toWireTransfer } from './types.js';
+import { type BuilderParams, assertBuilderParams, toWireBuilder } from './builder.js';
 
 /**
  * Perpetuals trading client. Mirrors sodex-go-sdk-public/client/perps.go.
@@ -85,10 +87,15 @@ export class PerpsAPI {
     accountID: number | bigint;
     symbolID: number | bigint;
     orders: Array<Record<string, unknown>>;
+    /** Default builder fee for every order in the request; last wire field. */
+    builder?: BuilderParams;
   }) {
+    if (params.builder) assertBuilderParams(params.builder, 'perps');
+    const { builder, ...rest } = params;
+    const wire = builder ? { ...rest, builder: toWireBuilder(builder) } : rest;
     return this.client.postSigned('perps', `${this.client.perpsBase}/trade/orders`, {
       type: 'newOrder',
-      params,
+      params: wire,
     });
   }
 
@@ -146,10 +153,10 @@ export class PerpsAPI {
   }
 
   /** Action type: "transferAsset" */
-  transferAsset(params: Record<string, unknown>) {
+  transferAsset(params: TransferAssetParams) {
     return this.client.postSigned('perps', `${this.client.perpsBase}/accounts/transfers`, {
       type: 'transferAsset',
-      params,
+      params: toWireTransfer(params),
     });
   }
 
@@ -160,5 +167,13 @@ export class PerpsAPI {
       `${this.client.perpsBase}/trade/orders/schedule-cancel`,
       { type: 'scheduleCancel', params },
     );
+  }
+
+  /** Revoke an API key from the perps engine. See SpotAPI.revokeAPIKey for the signing rules. */
+  revokeAPIKey(params: { accountID: number | bigint; name: string }) {
+    return this.client.deleteSigned('perps', `${this.client.perpsBase}/accounts/api-keys`, {
+      type: 'revokeAPIKey',
+      params,
+    });
   }
 }
