@@ -1,4 +1,5 @@
 import { Bot, InlineKeyboard, type Context } from 'grammy';
+import { tradeUrl } from '@/lib/trade/links';
 import { webhookCallback } from 'grammy';
 import { type EtfSymbol } from '@pod/sosovalue-sdk';
 import {
@@ -188,7 +189,9 @@ function getHandler() {
       const asset = payload.slice(6).toUpperCase();
       const b = await getBubble(asset as EtfSymbol);
       if (b) {
-        await ctx.reply(`${asset} POD Score: ${b.score}/100 (${b.direction})\n\n${b.reasoning}`);
+        await ctx.reply(`${asset} POD Score: ${b.score}/100 (${b.direction})\n\n${b.reasoning}`, {
+          reply_markup: new InlineKeyboard().url(`Trade ${asset} on SoDEX`, tradeUrl(asset, b.direction)),
+        });
       }
     }
 
@@ -556,11 +559,15 @@ function getHandler() {
     if (canTrade) {
       await ctx.reply(text, {
         reply_markup: new InlineKeyboard()
-          .text(`Buy $5 ${asset}`, `trade:preset:${asset}:5`)
-          .text(`Buy $10 ${asset}`, `trade:preset:${asset}:10`),
+          .url(`Trade ${asset} on SoDEX`, tradeUrl(asset, b.direction))
+          .row()
+          .text(`Buy $5 ${asset} (testnet demo)`, `trade:preset:${asset}:5`)
+          .text(`Buy $10 ${asset} (testnet demo)`, `trade:preset:${asset}:10`),
       });
     } else {
-      await ctx.reply(text);
+      await ctx.reply(text, {
+        reply_markup: new InlineKeyboard().url(`Trade ${asset} on SoDEX`, tradeUrl(asset, b.direction)),
+      });
     }
   });
 

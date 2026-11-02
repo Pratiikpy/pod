@@ -117,6 +117,8 @@ async function resetAccount(accountID) {
 }
 
 async function main() {
+  // The first score fan-out after a cold start can take close to a minute; production serves it from cache.
+  await fetch(`${BASE}/api/scores`, { signal: AbortSignal.timeout(120000) }).catch(() => {});
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
 
   // ── S1: no wallet installed ────────────────────────────────────────────
@@ -176,7 +178,7 @@ async function main() {
 
   // Pick BTC spot.
   await page.locator('[role=option][data-label="BTC/USDC"]').click();
-  await page.getByTestId('pod-read').waitFor({ timeout: 45000 });
+  await page.getByTestId('pod-read').waitFor({ timeout: 90000 });
   const readText = await page.getByTestId('pod-read').innerText();
   record('S4-0 the POD Score and its reasoning are shown for the selected coin', /POD says (buy|reduce|hold) BTC/.test(readText), readText.replace(/\s+/g, ' ').slice(0, 200));
   await shot(page, '05b-ready-with-score');
@@ -282,6 +284,44 @@ async function main() {
     );
     await shot(ctx2.page, '15-wealth-listed');
     await ctx2.context.close();
+  }
+
+  // S12 deep links: the asset page and the Telegram bot hand off to /trade with the coin and POD's side.
+  {
+    const probe = await newPage(browser, { account: funded });
+    await probe.page.goto(`${BASE}/asset/BTC`);
+    const cta = probe.page.getByTestId('trade-cta');
+    await cta.waitFor({ timeout: 60000 });
+    const href = await cta.getAttribute('href');
+    record('S12a asset page: primary button goes to the trade page for that coin', /^\/trade\?asset=BTC(&side=(buy|sell))?$/.test(href ?? ''), href ?? '');
+    await shot(probe.page, '16-asset-cta');
+    await probe.context.close();
+
+    const deep = await newPage(browser, { account: funded });
+    await deep.page.goto(`${BASE}/trade?asset=ETH&side=sell`);
+    await deep.page.getByTestId('wallet-POD Test Wallet').click();
+    await deep.page.getByTestId('enable-trading').waitFor({ timeout: 20000 });
+    await deep.page.getByTestId('enable-trading').click();
+    await deep.page.getByTestId('place-order').waitFor({ timeout: 40000 });
+    const selected = await deep.page.locator('[role=option][aria-selected=true]').first().getAttribute('data-label');
+    const sellActive = await deep.page.getByTestId('side-SELL').evaluate((el) => getComputedStyle(el).backgroundColor);
+    record('S12b /trade?asset=ETH&side=sell opens with ETH selected and Sell active', selected === 'ETH/USDC' && sellActive === 'rgb(216, 80, 86)', `selected=${selected} sellBg=${sellActive}`);
+    await shot(deep.page, '17-deeplink');
+    await deep.context.close();
+  }
+
+  // S14 onboarding strip.
+  {
+    const o = await newPage(browser, { account: privateKeyToAccount(generatePrivateKey()) });
+    await o.page.goto(`${BASE}/trade`);
+    const strip = await o.page.getByTestId('steps').innerText();
+    record('S14a connect view shows the three onboarding steps', /Fund SoDEX/.test(strip) && /Connect wallet/.test(strip) && /Enable trading/.test(strip), strip.replace(/\s+/g, ' '));
+    await o.page.getByTestId('wallet-POD Test Wallet').click();
+    await o.page.getByText('This wallet has no SoDEX account yet').waitFor({ timeout: 15000 });
+    const current = await o.page.locator('[data-testid=steps] li[aria-current=step]').innerText();
+    record('S14b a wallet with no account sees step 1 (fund SoDEX) highlighted', /Fund SoDEX/.test(current), current.replace(/\s+/g, ' '));
+    await shot(o.page, '18-steps-unfunded');
+    await o.context.close();
   }
 
   // S10 reload: the stored key survives, reconnect goes straight to the trade view.

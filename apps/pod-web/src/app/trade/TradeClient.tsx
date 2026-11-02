@@ -47,6 +47,34 @@ const card: React.CSSProperties = {
 const label: React.CSSProperties = { fontSize: 12, letterSpacing: '0.12em', textTransform: 'uppercase', color: POD.ink400 };
 const mono: React.CSSProperties = { fontVariantNumeric: 'tabular-nums' };
 
+/** The three things a new trader does, with the current one highlighted. */
+function stepStrip(current: 1 | 2 | 3) {
+  const steps: ReadonlyArray<readonly [number, string, string]> = [
+    [1, 'Fund SoDEX', 'Deposit USDC from Base, Ethereum or Arbitrum. Skip if you already have an account.'],
+    [2, 'Connect wallet', 'Use the same wallet you deposited from.'],
+    [3, 'Enable trading', 'One signature, then trade.'],
+  ];
+  return (
+    <ol data-testid="steps" style={{ listStyle: 'none', margin: '0 0 20px', padding: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10 }}>
+      {steps.map(([n, title, body]) => {
+        const done = n < current;
+        const active = n === current;
+        return (
+          <li key={n} aria-current={active ? 'step' : undefined} style={{ ...card, padding: '12px 14px', borderColor: active ? 'rgba(207,255,61,0.45)' : 'rgba(255,255,255,0.05)', opacity: done ? 0.7 : 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600, color: active ? POD.ink50 : POD.ink200 }}>
+              <span style={{ width: 22, height: 22, borderRadius: 11, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, background: active ? POD.lime : done ? POD.limeDeep : POD.ink700, color: active || done ? POD.ink900 : POD.ink300 }}>
+                {done ? '✓' : n}
+              </span>
+              {title}
+            </div>
+            <div style={{ fontSize: 12.5, color: POD.ink400, lineHeight: 1.5, marginTop: 6 }}>{body}</div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 /** One column on narrow screens. Every view that uses the two-column grid must include this. */
 const responsive = <style>{`@media (max-width: 820px) { .pod-trade-grid { grid-template-columns: minmax(0,1fr) !important; } }`}</style>;
 
@@ -318,6 +346,7 @@ export function TradeClient() {
       <>
         {responsive}
         {header}
+        {stepStrip(2)}
         {errorBox}
         <div style={{ ...card, maxWidth: 560 }}>
           <div style={{ fontWeight: 600, marginBottom: 12 }}>Connect a wallet</div>
@@ -393,6 +422,7 @@ export function TradeClient() {
       <>
         {responsive}
         {header}
+        {stepStrip(1)}
         {errorBox}
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 320px', gap: 20 }} className="pod-trade-grid">
           <div style={card}>
@@ -421,6 +451,7 @@ export function TradeClient() {
       <>
         {responsive}
         {header}
+        {stepStrip(3)}
         {errorBox}
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 320px', gap: 20 }} className="pod-trade-grid">
           <div style={card}>

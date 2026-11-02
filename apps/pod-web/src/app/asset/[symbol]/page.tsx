@@ -362,8 +362,9 @@ function CTARow({ data }: { data: BubbleData }) {
         alignItems: 'center',
       }}
     >
-      <a
-        href={`https://t.me/podttest_bot?start=score-${data.asset}`}
+      <Link
+        href={`/trade?${new URLSearchParams({ asset: data.asset, ...(data.direction === 'BUY' || data.direction === 'STRONG_BUY' ? { side: 'buy' } : data.direction === 'SELL' || data.direction === 'STRONG_SELL' ? { side: 'sell' } : {}) }).toString()}`}
+        data-testid="trade-cta"
         style={{
           background: POD.lime,
           color: POD.ink900,
@@ -377,7 +378,20 @@ function CTARow({ data }: { data: BubbleData }) {
           gap: 8,
         }}
       >
-        Trade {data.asset} on Telegram →
+        Trade {data.asset} on SoDEX →
+      </Link>
+      <a
+        href={`https://t.me/podttest_bot?start=score-${data.asset}`}
+        style={{
+          color: POD.ink200,
+          fontSize: 14,
+          textDecoration: 'none',
+          padding: '14px 18px',
+          border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: 12,
+        }}
+      >
+        Alerts on Telegram
       </a>
       <Link
         href="/how-it-works"

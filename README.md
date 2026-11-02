@@ -75,9 +75,10 @@ Weights are normalised by their sum, so a source with no data contributes nothin
 POD is a SoDEX **builder**: it earns a small fee on orders routed through it, and a user always approves that fee first.
 
 - **Non-custodial.** Connect any browser wallet (EIP-6963). One signature registers a trading key that lives only in your browser (14-day expiry) and approves POD's builder fee. Orders are signed in the browser and go straight to the SoDEX gateway. POD never holds keys or funds.
-- **Spot, Perps and Wealth.** Spot and tokenized ETFs/stocks (Wealth, order-book funds such as QQQ and VOO) share one path. Perps support long, short and close. Wealth vault funds (CXMT, UNITREE, Morpho Earn) are not built yet.
+- **Spot, Perps and Wealth.** Spot and tokenized ETFs/stocks (Wealth, order-book funds such as QQQ and VOO) share one path. Perps support long, short and close. Wealth vault funds (CXMT, UNITREE, Morpho Earn) are not part of this page.
 - **Fees, as the gateway charges them.** Perps 5 bp on both sides, spot 10 bp on sells only (spot buys carry no builder fee), capped by what the user approved. The page shows the estimate before the order and the amount charged after it.
 - **Builder account:** SoDEX account `235300` (mainnet).
+- **Deep links.** Every coin page and every `/score` reply in the Telegram bot links to `/trade?asset=BTC&side=sell`, with POD's own direction pre-selected.
 
 Proof, all against the real SoDEX testnet gateway, not mocks:
 
@@ -85,7 +86,7 @@ Proof, all against the real SoDEX testnet gateway, not mocks:
 |---|---|
 | SDK unit tests (signing, caps, decimals, sizing, results) | 77 passing |
 | `packages/sodex-sdk/scripts/verify-builder-testnet.ts` | 18/18: approve, both-engine visibility, wrong signer rejected, replay rejected, fee on real fills at the exact rate, key registration with builder, revoke, clear |
-| `apps/pod-web/e2e/trade.e2e.mjs` (real browser, real EIP-712 signatures) | 28/28: connect, enable, buy, sell, perps open and close, declined signature, minimum-order guidance, reload, mobile layout, zero console errors |
+| `apps/pod-web/e2e/trade.e2e.mjs` (real browser, real EIP-712 signatures) | 32/32: connect, enable, buy, sell, perps open and close, declined signature, minimum-order guidance, reload, deep links from the asset page, onboarding steps, mobile layout, zero console errors |
 
 On the live fills, the builder fee matched `notional x rate / 100000` to the digit: 5 bp on perps open and close, 10 bp on a spot sell, a request of 100 against an approval of 50 charged 5 bp, and no fee with no approval.
 
