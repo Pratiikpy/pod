@@ -65,3 +65,6 @@ docs/VERIFIED_PERFECT_IDEA.md
 
 # Foundry dependencies — restored with: forge install
 packages/pod-contracts/lib/
+
+# local browser-test screenshots (curated copies live in docs/images)
+apps/pod-web/e2e/shots/

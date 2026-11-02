@@ -70,6 +70,35 @@ Weights are normalised by their sum, so a source with no data contributes nothin
 
 ---
 
+## Trade from your own wallet (`/trade`)
+
+POD is a SoDEX **builder**: it earns a small fee on orders routed through it, and a user always approves that fee first.
+
+- **Non-custodial.** Connect any browser wallet (EIP-6963). One signature registers a trading key that lives only in your browser (14-day expiry) and approves POD's builder fee. Orders are signed in the browser and go straight to the SoDEX gateway. POD never holds keys or funds.
+- **Spot, Perps and Wealth.** Spot and tokenized ETFs/stocks (Wealth, order-book funds such as QQQ and VOO) share one path. Perps support long, short and close. Wealth vault funds (CXMT, UNITREE, Morpho Earn) are not built yet.
+- **Fees, as the gateway charges them.** Perps 5 bp on both sides, spot 10 bp on sells only (spot buys carry no builder fee), capped by what the user approved. The page shows the estimate before the order and the amount charged after it.
+- **Builder account:** SoDEX account `235300` (mainnet).
+
+Proof, all against the real SoDEX testnet gateway, not mocks:
+
+| Check | Result |
+|---|---|
+| SDK unit tests (signing, caps, decimals, sizing, results) | 77 passing |
+| `packages/sodex-sdk/scripts/verify-builder-testnet.ts` | 18/18: approve, both-engine visibility, wrong signer rejected, replay rejected, fee on real fills at the exact rate, key registration with builder, revoke, clear |
+| `apps/pod-web/e2e/trade.e2e.mjs` (real browser, real EIP-712 signatures) | 28/28: connect, enable, buy, sell, perps open and close, declined signature, minimum-order guidance, reload, mobile layout, zero console errors |
+
+On the live fills, the builder fee matched `notional x rate / 100000` to the digit: 5 bp on perps open and close, 10 bp on a spot sell, a request of 100 against an approval of 50 charged 5 bp, and no fee with no approval.
+
+![Trade page, spot, with the POD read](docs/images/trade-spot-ready.png)
+![Perps fill and open position](docs/images/trade-perps-filled.png)
+![Mobile](docs/images/trade-mobile.png)
+
+Run the tests: `pnpm --filter @pod/sodex-sdk test`, then with `NEXT_PUBLIC_SODEX_NETWORK=testnet pnpm --filter @pod/pod-web dev` running, `node apps/pod-web/e2e/trade.e2e.mjs`. The e2e test needs the funded testnet key in `.env` and a Chrome install.
+
+Not verified yet: a real-money mainnet trade, and the Wealth tab against live mainnet funds (the testnet has no tokenized-ETF markets, so that path is tested with a mocked fund list).
+
+---
+
 ## The web surfaces
 
 - **Bubbles** (`/bubbles`) — ten coins, ten bubbles. Colour is the score (red defensive, lime conviction), size is rank, pulse is how unusual the flow is. Click for a drawer with the full reasoning and per-source breakdown. Responsive; mobile bottom-sheet; keyboard/screen-reader list; respects reduce-motion.

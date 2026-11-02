@@ -11,6 +11,7 @@ const LINKS: ReadonlyArray<readonly [string, string]> = [
   ['/', 'Live scores'],
   ['/bubbles', 'Bubbles'],
   ['/leaderboard', 'Leaderboard'],
+  ['/trade', 'Trade'],
   ['/flows', 'ETF flows'],
   ['/ssi', 'SSI'],
   ['/intel', 'Intel'],
