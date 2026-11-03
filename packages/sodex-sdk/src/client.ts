@@ -174,6 +174,24 @@ export class SoDEXClient {
     return res;
   }
 
+  /** DELETE counterpart of postWithHeaders, for wallet-signed key revocation. */
+  async deleteWithHeaders<T = unknown>(path: string, body: unknown, headers: Record<string, string>): Promise<T> {
+    let res: T;
+    try {
+      res = (await $fetch(path, {
+        method: 'DELETE',
+        baseURL: this.baseUrl,
+        timeout: this.timeout,
+        body: actionJson(body),
+        headers,
+      })) as T;
+    } catch (err: unknown) {
+      throw this.toApiError(err, path);
+    }
+    this.assertEnvelopeOk(res, path);
+    return res;
+  }
+
   /** Throws when a gateway envelope carries a non-zero `code`. */
   assertEnvelopeOk(res: unknown, path: string): void {
     const env = res as { code?: number; error?: string; message?: string } | null;

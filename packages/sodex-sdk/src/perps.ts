@@ -1,5 +1,5 @@
 import type { SoDEXClient } from './client.js';
-import { type TransferAssetParams, toWireTransfer } from './types.js';
+import { type AccountQuery, type MarginModeName, MARGIN_MODE, type TransferAssetParams, toWireTransfer } from './types.js';
 import { type BuilderParams, assertBuilderParams, toWireBuilder } from './builder.js';
 
 /**
@@ -47,15 +47,17 @@ export class PerpsAPI {
     );
   }
 
-  openOrders(address: string) {
+  openOrders(address: string, params?: AccountQuery) {
     return this.client.get<{ data: unknown[] }>(
       `${this.client.perpsBase}/accounts/${address}/orders`,
+      params,
     );
   }
 
-  positions(address: string) {
-    return this.client.get<{ data: unknown[] }>(
+  positions(address: string, params?: Pick<AccountQuery, 'accountID' | 'symbol'>) {
+    return this.client.get<{ data: unknown }>(
       `${this.client.perpsBase}/accounts/${address}/positions`,
+      params,
     );
   }
 
@@ -66,14 +68,14 @@ export class PerpsAPI {
     );
   }
 
-  ordersHistory(address: string, params?: { symbolID?: string; limit?: number }) {
+  ordersHistory(address: string, params?: AccountQuery) {
     return this.client.get<{ data: unknown[] }>(
       `${this.client.perpsBase}/accounts/${address}/orders/history`,
       params,
     );
   }
 
-  userTrades(address: string, params?: { symbolID?: string; limit?: number }) {
+  userTrades(address: string, params?: AccountQuery) {
     return this.client.get<{ data: unknown[] }>(
       `${this.client.perpsBase}/accounts/${address}/trades`,
       params,
@@ -132,11 +134,17 @@ export class PerpsAPI {
     accountID: number | bigint;
     symbolID: number | bigint;
     leverage: number;
-    marginMode: 'CROSS' | 'ISOLATED';
+    /** The name or the integer from MarginModeEnum (1 isolated, 2 cross). The wire needs the integer. */
+    marginMode: MarginModeName | number;
   }) {
+    if (!Number.isInteger(params.leverage) || params.leverage < 1) {
+      throw new RangeError(`leverage must be a whole number of at least 1, got ${params.leverage}`);
+    }
+    const marginMode = typeof params.marginMode === 'number' ? params.marginMode : MARGIN_MODE[params.marginMode];
+    if (marginMode !== 1 && marginMode !== 2) throw new RangeError(`unknown margin mode ${String(params.marginMode)}`);
     return this.client.postSigned('perps', `${this.client.perpsBase}/trade/leverage`, {
       type: 'updateLeverage',
-      params,
+      params: { accountID: params.accountID, symbolID: params.symbolID, leverage: params.leverage, marginMode },
     });
   }
 

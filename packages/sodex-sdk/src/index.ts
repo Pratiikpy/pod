@@ -18,6 +18,8 @@ export * from './builder.js';
 export * from './decimal.js';
 export * from './results.js';
 export * from './market.js';
+export * from './fills.js';
+export * from './keys.js';
 export * from './public.js';
 
 /**

@@ -58,6 +58,26 @@ export function toWireTransfer(p: TransferAssetParams) {
   return { id, fromAccountID: p.fromAccountID, toAccountID: p.toAccountID, coinID: p.coinID, amount: p.amount, type };
 }
 
+// ── Margin ──────────────────────────────────────────────────────────────────
+
+/** MarginModeEnum integer values. The wire format takes the integer, never the name. */
+export const MARGIN_MODE = { ISOLATED: 1, CROSS: 2 } as const;
+export type MarginModeName = keyof typeof MARGIN_MODE;
+
+// ── Account queries ─────────────────────────────────────────────────────────
+
+/** Query parameters the gateway documents for order and trade history. */
+export type AccountQuery = {
+  /** Sub-account to read; the primary account is used when omitted. */
+  accountID?: number | bigint;
+  /** Symbol NAME such as "vBTC_vUSDC" or "BTC-USD", not a numeric id. */
+  symbol?: string;
+  orderID?: number | bigint;
+  startTime?: number;
+  endTime?: number;
+  limit?: number;
+};
+
 // ── Order types ─────────────────────────────────────────────────────────────
 
 export type OrderSide = 'BUY' | 'SELL';

@@ -1,5 +1,6 @@
 import type { Hex } from 'viem';
 import type { SoDEXClient } from './client.js';
+import { type KeyEngine, type RevokeApiKeyInput, engineHeaders, revokeApiKeyTypedData } from './keys.js';
 import {
   type AddApiKeyInput,
   type ApproveBuilderFeeInput,
@@ -44,6 +45,8 @@ interface Envelope<T> {
 }
 
 /** A typed-data request produced by this SDK and signed by the user's wallet. */
+export type { KeyEngine };
+
 export type WalletSigner = (request: ReturnType<typeof approveBuilderFeeTypedData>['request']) => Promise<Hex>;
 
 /**
@@ -129,12 +132,31 @@ export class PublicAPI {
     input: AddApiKeyInput,
     sign: (request: ReturnType<typeof addApiKeyTypedData>['request']) => Promise<Hex>,
   ): Promise<Envelope<null>> {
-    const { request, nonce, body } = addApiKeyTypedData(input);
+    // The gateway refused the plain AddAPIKey form in live testing ("API key not found", despite a
+    // signature that matches the docs), while AddAPIKeyWithBuilder with a zero rate registers the
+    // same key and creates no approval. So a key without a builder goes through that path.
+    const withBuilder: AddApiKeyInput = input.builder ? input : { ...input, builder: { id: input.accountID, fee: 0 } };
+    const { request, nonce, body } = addApiKeyTypedData(withBuilder);
     const signature = await sign(request);
     return this.client.postWithHeaders<Envelope<null>>(
       this.userPath(userAddress, '/api-keys'),
       body,
       universalHeaders(input.network, signature, nonce, input.domainChainId),
     );
+  }
+
+  /**
+   * Removes an API key from ONE engine. Call it for both engines: a revoke on one does not revoke the other.
+   * `sign` must produce the master wallet's signature on the SoDEX chain (see revokeApiKeyTypedData).
+   */
+  async revokeApiKey(
+    userAddress: string,
+    input: RevokeApiKeyInput,
+    sign: (request: ReturnType<typeof revokeApiKeyTypedData>['request']) => Promise<Hex>,
+  ): Promise<Envelope<null>> {
+    this.userPath(userAddress, '');
+    const { request, nonce, body, path } = revokeApiKeyTypedData(input);
+    const signature = await sign(request);
+    return this.client.deleteWithHeaders<Envelope<null>>(path, body, engineHeaders(input.network, signature, nonce));
   }
 }

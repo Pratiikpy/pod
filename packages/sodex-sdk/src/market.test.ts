@@ -7,6 +7,8 @@ import {
   notionalOf,
   quantityForNotional,
   quoteBuilderFee,
+  buySellability,
+  sellability,
   type MarketRules,
 } from './market.js';
 
@@ -90,6 +92,61 @@ describe('minimumOrder', () => {
     const r = quantityForNotional({ notional: 5, price: 78377, rules: BTC_SPOT });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toMatch(/smallest order right now is about \$5\.\d\d/);
+  });
+});
+
+describe('sellability (the stranded-holding bug found on live mainnet)', () => {
+  it('reproduces it: a minimum BTC buy leaves 0.0000699545, which cannot be sold at 78,100', () => {
+    const r = sellability({ holding: '0.0000699545', price: 78100, rules: BTC_SPOT });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.maxSellable).toBe('0.00006');
+      expect(r.smallest?.quantity).toBe('0.00007');
+      expect(r.reason).toMatch(/hold 0\.0000699545/);
+      expect(r.reason).toMatch(/smallest sell right now is 0\.00007/);
+    }
+  });
+  it('a holding below one step can never be sold, in whole or in part', () => {
+    const r = sellability({ holding: '0.0000099', price: 78100, rules: BTC_SPOT });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/less than one step \(0\.00001\)/);
+  });
+  it('a holding that clears the minimum is sellable and capped at a whole step', () => {
+    const r = sellability({ holding: '0.00012345', price: 78100, rules: BTC_SPOT });
+    expect(r).toEqual({ ok: true, maxQuantity: '0.00012', notional: '9.372' });
+  });
+  it('works on another market (SOSO-like: step 0.01, min notional 1)', () => {
+    const SOSO: MarketRules = { stepSize: '0.01', minQuantity: '0.01', maxQuantity: '0', minNotional: '1', maxNotional: '0', quantityPrecision: 2 };
+    expect(sellability({ holding: '4.6', price: 0.25, rules: SOSO }).ok).toBe(true);
+    expect(sellability({ holding: '3.99', price: 0.25, rules: SOSO }).ok).toBe(false);
+  });
+});
+
+describe('buySellability', () => {
+  it('warns that the smallest BTC buy cannot be sold back after the 0.065% fee, and suggests a size that can', () => {
+    const r = buySellability({ quantity: '0.00007', takerFee: '0.00065', price: 78100, rules: BTC_SPOT });
+    expect(r.sellable).toBe(false);
+    if (!r.sellable) {
+      expect(r.holdingAfterFee).toBe('0.0000699545');
+      expect(r.suggestedQuantity).toBe('0.00008');
+      const after = buySellability({ quantity: r.suggestedQuantity!, takerFee: '0.00065', price: 78100, rules: BTC_SPOT });
+      expect(after.sellable).toBe(true);
+    }
+  });
+  it('a bigger buy is sellable', () => {
+    expect(buySellability({ quantity: '0.0002', takerFee: '0.00065', price: 78100, rules: BTC_SPOT }).sellable).toBe(true);
+  });
+  it('every suggestion across many prices is itself sellable (property check)', () => {
+    for (const price of [20000, 55555, 78100, 99999, 150000]) {
+      const min = quantityForNotional({ notional: 5.01, price, rules: BTC_SPOT });
+      if (!min.ok) continue;
+      const w = buySellability({ quantity: min.quantity, takerFee: '0.00065', price, rules: BTC_SPOT });
+      if (w.sellable) continue;
+      expect(buySellability({ quantity: w.suggestedQuantity!, takerFee: '0.00065', price, rules: BTC_SPOT }).sellable).toBe(true);
+    }
+  });
+  it('a zero fee changes nothing', () => {
+    expect(buySellability({ quantity: '0.00007', takerFee: '0', price: 78100, rules: BTC_SPOT }).sellable).toBe(true);
   });
 });
 

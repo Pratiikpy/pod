@@ -1,5 +1,5 @@
 import type { SoDEXClient } from './client.js';
-import { type TransferAssetParams, toWireTransfer } from './types.js';
+import { type AccountQuery, type TransferAssetParams, toWireTransfer } from './types.js';
 import { canonicalDecimal } from './decimal.js';
 import { type BuilderParams, assertBuilderParams, toWireBuilder } from './builder.js';
 
@@ -61,20 +61,21 @@ export class SpotAPI {
     );
   }
 
-  openOrders(address: string) {
+  openOrders(address: string, params?: AccountQuery) {
     return this.client.get<{ data: unknown[] }>(
       `${this.client.spotBase}/accounts/${address}/orders`,
+      params,
     );
   }
 
-  ordersHistory(address: string, params?: { symbolID?: string; limit?: number }) {
+  ordersHistory(address: string, params?: AccountQuery) {
     return this.client.get<{ data: unknown[] }>(
       `${this.client.spotBase}/accounts/${address}/orders/history`,
       params,
     );
   }
 
-  userTrades(address: string, params?: { symbolID?: string; limit?: number }) {
+  userTrades(address: string, params?: AccountQuery) {
     return this.client.get<{ data: unknown[] }>(
       `${this.client.spotBase}/accounts/${address}/trades`,
       params,

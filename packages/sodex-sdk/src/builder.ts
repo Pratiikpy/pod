@@ -22,6 +22,16 @@ export const BUILDER_MAX_FEE_RATE = 2000;
 /** A builder needs this much vUSDC in each engine to receive a non-zero approval. */
 export const BUILDER_MIN_BALANCE_VUSDC = 100;
 
+/**
+ * Whether a builder account can receive new approvals: SoDEX requires BUILDER_MIN_BALANCE_VUSDC in
+ * BOTH engines at the moment a user approves. Falling below it later does not stop fee credits, but
+ * every new approval is refused until the balance is restored.
+ */
+export function builderEligibility(balances: { spot: number; perps: number }, floor: number = BUILDER_MIN_BALANCE_VUSDC) {
+  const shortfall = { spot: Math.max(0, floor - balances.spot), perps: Math.max(0, floor - balances.perps) };
+  return { ok: shortfall.spot === 0 && shortfall.perps === 0, shortfall };
+}
+
 /** A user can hold at most this many active builder approvals. */
 export const BUILDER_MAX_APPROVALS_PER_USER = 10;
 

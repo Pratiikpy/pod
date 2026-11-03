@@ -8,6 +8,7 @@ import {
   approveBuilderFeeTypedData,
   assertBuilderParams,
   bpToFeeUnits,
+  builderEligibility,
   toUniversalSignature,
   toWireBuilder,
   universalDomain,
@@ -339,5 +340,21 @@ describe('a freshly generated wallet round-trips through the approval signature'
       const sig = await acct.signTypedData(request as never);
       expect(await recoverTypedDataAddress({ ...(request as never), signature: sig })).toBe(acct.address);
     }
+  });
+});
+
+describe('builderEligibility (new approvals are refused below 100 vUSDC in either engine)', () => {
+  it('is eligible at or above the floor in both engines, including exactly 100', () => {
+    expect(builderEligibility({ spot: 100, perps: 100 })).toEqual({ ok: true, shortfall: { spot: 0, perps: 0 } });
+    expect(builderEligibility({ spot: 250.5, perps: 100.01 }).ok).toBe(true);
+  });
+  it('is NOT eligible when either engine is short, and says by how much', () => {
+    expect(builderEligibility({ spot: 95.93, perps: 105.5 })).toMatchObject({ ok: false, shortfall: { perps: 0 } });
+    expect(builderEligibility({ spot: 95.93, perps: 105.5 }).shortfall.spot).toBeCloseTo(4.07, 2);
+    expect(builderEligibility({ spot: 101, perps: 99.99 }).ok).toBe(false);
+    expect(builderEligibility({ spot: 0, perps: 0 }).shortfall).toEqual({ spot: 100, perps: 100 });
+  });
+  it('the live mainnet numbers at the time of writing are eligible, by a cent', () => {
+    expect(builderEligibility({ spot: 101.043573821, perps: 100.01033068 }).ok).toBe(true);
   });
 });

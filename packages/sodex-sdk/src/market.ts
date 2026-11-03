@@ -173,3 +173,92 @@ export function quoteBuilderFee(input: {
     ...(reduced ? { note: `Capped at ${rate / 10} bp by your approval or the ${input.engine} limit.` } : {}),
   };
 }
+
+export type SellCheck =
+  | { ok: true; maxQuantity: string; notional: string }
+  | {
+      ok: false;
+      holding: string;
+      /** The most that could be sold: the holding rounded down to a whole step. */
+      maxSellable: string;
+      /** The smallest sell this market accepts at this price, when a price is known. */
+      smallest: { quantity: string; notional: string } | null;
+      reason: string;
+    };
+
+/**
+ * Whether a holding can be sold at all. A sell must be a whole number of steps, at least
+ * the minimum quantity and worth at least the minimum notional, so a holding just below
+ * the smallest valid sell is stuck: it cannot be sold in whole or in part.
+ */
+export function sellability(input: { holding: string; price: string | number; rules: MarketRules }): SellCheck {
+  const { rules } = input;
+  const holding = canonicalDecimal(input.holding);
+  const maxSellable = floorToStep(holding, rules.stepSize);
+  const smallest = minimumOrder(input.price, rules);
+  const fail = (reason: string): SellCheck => ({ ok: false, holding, maxSellable, smallest, reason });
+
+  if (toScaled(maxSellable) <= 0n) {
+    return fail(`You hold ${holding}, which is less than one step (${rules.stepSize}), so it cannot be sold.`);
+  }
+  const check = checkSize(maxSellable, input.price, rules);
+  if (check.ok) return { ok: true, maxQuantity: check.quantity, notional: check.notional };
+  const hint = smallest ? ` The smallest sell right now is ${smallest.quantity} (about $${Number(smallest.notional).toFixed(2)}).` : '';
+  return fail(`You hold ${holding} and can sell at most ${maxSellable}.${hint}`);
+}
+
+export type BuySellability =
+  | { sellable: true; holdingAfterFee: string }
+  | {
+      sellable: false;
+      holdingAfterFee: string;
+      reason: string;
+      /** A buy size that would leave a sellable holding, with a small cushion for price moves. */
+      suggestedQuantity: string | null;
+      suggestedNotional: string | null;
+    };
+
+/**
+ * Spot buy fees are taken from the asset you buy, so buying exactly the smallest sell leaves
+ * slightly less than that and the position cannot be closed. Checks that, and suggests a size.
+ *
+ * `cushion` lowers the assumed future sell price when sizing the suggestion, so a small dip
+ * does not strand the position again.
+ */
+export function buySellability(input: {
+  quantity: string;
+  /** The market's taker fee as a decimal, e.g. "0.00065". */
+  takerFee: string;
+  price: string | number;
+  rules: MarketRules;
+  cushion?: number;
+}): BuySellability {
+  const { rules } = input;
+  const keep = ONE - toScaled(input.takerFee);
+  const holdingAfterFee = fromScaled((toScaled(input.quantity) * keep) / ONE);
+  const sell = sellability({ holding: holdingAfterFee, price: input.price, rules });
+  if (sell.ok) return { sellable: true, holdingAfterFee };
+
+  const cushion = input.cushion ?? 0.02;
+  const futurePrice = fromScaled((toScaled(String(input.price)) * (ONE - toScaled(String(cushion)))) / ONE);
+  const min = minimumOrder(futurePrice, rules);
+  let suggestedQuantity: string | null = null;
+  let suggestedNotional: string | null = null;
+  if (min && keep > 0n) {
+    // Smallest whole-step buy whose after-fee holding still covers the smallest sell.
+    let q = ceilToStep(fromScaled((toScaled(min.quantity) * ONE) / keep), rules.stepSize);
+    while (toScaled(floorToStep(fromScaled((toScaled(q) * keep) / ONE), rules.stepSize)) < toScaled(min.quantity)) {
+      q = fromScaled(toScaled(q) + toScaled(rules.stepSize));
+    }
+    suggestedQuantity = q;
+    suggestedNotional = notionalOf(input.price, q);
+  }
+  const pct = (Number(input.takerFee) * 100).toFixed(3).replace(/\.?0+$/, '');
+  return {
+    sellable: false,
+    holdingAfterFee,
+    reason: `After the ${pct}% buy fee you would hold ${holdingAfterFee}, which is below the smallest sell, so you could not sell it back.`,
+    suggestedQuantity,
+    suggestedNotional,
+  };
+}
