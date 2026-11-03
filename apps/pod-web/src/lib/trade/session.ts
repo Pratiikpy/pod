@@ -1,6 +1,6 @@
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import type { Address, Hex } from 'viem';
-import { NETWORK, TRADE_KEY_TTL_MS } from './config';
+import { NETWORK, POD_KEY_PREFIX, TRADE_KEY_TTL_MS } from './config';
 
 /**
  * The trading key lives only in this browser. It signs orders; the user's wallet
@@ -34,9 +34,10 @@ function storage(): Storage | null {
 
 export function createTradeKey(owner: Address, accountID: number, now = Date.now()): TradeKey {
   const privateKey = generatePrivateKey();
-  const rand = Array.from(crypto.getRandomValues(new Uint8Array(4)), (b) => b.toString(16).padStart(2, '0')).join('');
+  const rand = Array.from(crypto.getRandomValues(new Uint8Array(2)), (b) => b.toString(16).padStart(2, '0')).join('');
   return {
-    name: `pod-${owner.slice(2, 8).toLowerCase()}-${rand}`,
+    // pod-<owner6>-<base36 ms>-<rand>: the timestamp lets the oldest key be found when a slot has to be freed.
+    name: `${POD_KEY_PREFIX}${owner.slice(2, 8).toLowerCase()}-${now.toString(36)}-${rand}`,
     privateKey,
     address: privateKeyToAccount(privateKey).address,
     accountID,

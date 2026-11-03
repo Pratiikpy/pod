@@ -4,26 +4,37 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { SoDEXAPIError } from '@pod/sodex-sdk';
 import { POD, scoreColor } from '@/design/tokens';
-import { APPROVAL_CEILING, BUILDER_ID, EXPLORER, FEE_DESCRIPTION, NETWORK } from '@/lib/trade/config';
+import { APPROVAL_CEILING, BUILDER_ID, EXPLORER, FEE_DESCRIPTION, NETWORK, SODEX_CHAIN, TRADE_KEY_TTL_MS } from '@/lib/trade/config';
 import {
-  closePosition,
+  BuilderPausedError,
+  KeyLimitError,
   enableTrading,
   forgetLocalKey,
+  freeKeySlot,
   loadAccount,
   loadMarkets,
   loadWealthFunds,
   wealthMarkets,
+  reapproveFee,
+  type AccountSnapshot,
+  type Market,
+} from '@/lib/trade/engine';
+import {
+  checkBuyIsSellable,
+  checkHoldingIsSellable,
+  closePosition,
   loadPositions,
+  marginNeeded,
   placePerps,
   placeSpot,
   quoteFor,
-  reapproveFee,
+  sizeExact,
   sizeOrder,
-  type AccountSnapshot,
-  type Market,
   type OrderOutcome,
   type Position,
-} from '@/lib/trade/engine';
+  type Submitted,
+} from '@/lib/trade/orders';
+import { checkBuilderHealth, type BuilderHealth } from '@/lib/trade/health';
 import { loadTradeKey, type TradeKey } from '@/lib/trade/session';
 import { connectWallet, discoverWallets, isUserRejection, type ConnectedWallet, type DiscoveredWallet } from '@/lib/trade/wallets';
 
@@ -38,6 +49,25 @@ interface Score {
   summary: string;
 }
 
+/**
+ * What the order ticket knows about the order being typed. `key` names the inputs it was computed
+ * for, so a preview that belongs to an older amount can never be shown or acted on.
+ */
+interface Preview {
+  key: string;
+  ok: boolean;
+  text: string;
+  detail?: string;
+  /** A caution that does not block the order. */
+  warning?: string;
+  /** An amount that would fix the warning, offered as a one-click button. */
+  suggestUsd?: number;
+  /** For a spot sell: the amount that sells everything sellable. */
+  maxSellUsd?: number;
+  /** The exact quantity that sells everything sellable. */
+  maxSellQty?: string;
+}
+
 const card: React.CSSProperties = {
   background: POD.ink850,
   border: '1px solid rgba(255,255,255,0.05)',
@@ -50,7 +80,7 @@ const mono: React.CSSProperties = { fontVariantNumeric: 'tabular-nums' };
 /** The three things a new trader does, with the current one highlighted. */
 function stepStrip(current: 1 | 2 | 3) {
   const steps: ReadonlyArray<readonly [number, string, string]> = [
-    [1, 'Fund SoDEX', 'Deposit USDC from Base, Ethereum or Arbitrum. Skip if you already have an account.'],
+    [1, 'Fund SoDEX', 'Deposit 10 USDC or more from Base, Ethereum or Arbitrum. Skip if you already have an account.'],
     [2, 'Connect wallet', 'Use the same wallet you deposited from.'],
     [3, 'Enable trading', 'One signature, then trade.'],
   ];
@@ -84,14 +114,91 @@ const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 /** One place that turns a thrown error into a sentence a trader can act on. */
 function explain(err: unknown): string {
   if (isUserRejection(err)) return 'You declined the request in your wallet. Nothing was changed.';
+  if (err instanceof BuilderPausedError) return err.message;
   const m = err instanceof Error ? err.message : String(err);
-  if (/builder USDC balance is insufficient/i.test(m)) {
+  if (/builder USDC balance is insufficient|builderID is invalid/i.test(m)) {
     return 'POD’s builder account is below the 100 USDC SoDEX requires, so fee approvals are paused. Try again shortly.';
   }
   if (/insufficient/i.test(m)) return `Not enough balance for this order. ${m}`;
   if (/API key not found|invalid signature|expired/i.test(m)) return 'Your trading key is no longer valid. Enable trading again to register a new one.';
   if (err instanceof SoDEXAPIError) return m.replace(/^SoDEX (API error on|rejected) [^:]*:\s*/, '');
   return m;
+}
+
+/** The honest account of an order: submitted and confirming, or what SoDEX's own data says happened. */
+function OutcomeCard({ outcome, pending }: { outcome: OrderOutcome | null; pending: { submitted: Submitted; line: string } | null }) {
+  if (!outcome && !pending) return null;
+  if (!outcome && pending) {
+    return (
+      <div style={{ ...card, borderColor: 'rgba(255,255,255,0.18)' }} data-testid="outcome" data-state="confirming">
+        <div style={{ fontWeight: 600, marginBottom: 6 }}>Order submitted. Confirming with SoDEX…</div>
+        <div style={{ fontSize: 14, color: POD.ink300, lineHeight: 1.6 }} data-testid="outcome-progress">{pending.line}</div>
+        <div style={{ fontSize: 12, color: POD.ink400, marginTop: 8 }}>
+          Order {pending.submitted.orderID ?? pending.submitted.clOrdID}. It has been sent, so please do not send it again. This can take up to a minute.
+        </div>
+      </div>
+    );
+  }
+  const o = outcome!;
+  const r = o.result;
+  const note = o.quote.note ? <><br /><span style={{ color: POD.ink400 }}>{o.quote.note}</span></> : null;
+
+  if (r.state === 'filled') {
+    const qty = r.fills.reduce((n, f) => n + Number(f.quantity), 0);
+    const avg = qty > 0 ? r.fills.reduce((n, f) => n + Number(f.price) * Number(f.quantity), 0) / qty : Number(r.avgPrice ?? NaN);
+    const fee = r.fills.reduce((n, f) => n + Number(f.fee ?? 0), 0);
+    const builderFee = r.fills.reduce((n, f) => n + Number(f.builderFee ?? 0), 0);
+    const coin = r.fills[0]?.feeCoin ?? '';
+    const shownQty = qty > 0 ? String(qty) : r.executedQty ?? '';
+    return (
+      <div style={{ ...card, borderColor: 'rgba(207,255,61,0.35)' }} data-testid="outcome" data-state="filled" data-source={r.source}>
+        <div style={{ fontWeight: 600, marginBottom: 6 }}>{r.partial ? 'Order partly filled' : 'Order filled'}</div>
+        <div style={{ fontSize: 14, color: POD.ink200, lineHeight: 1.8, ...mono }}>
+          {shownQty ? <>{shownQty}{Number.isFinite(avg) ? ` at ${usd(avg, avg < 1 ? 5 : 2)}` : ''}<br /></> : null}
+          {r.source === 'trades' ? (
+            <>
+              Total fee {fee} {coin}
+              <br />
+              POD builder fee {builderFee}
+              {note}
+            </>
+          ) : (
+            <span style={{ color: POD.ink400, fontFamily: 'inherit' }}>
+              {r.source === 'order'
+                ? 'SoDEX has not published the fee details yet. They will appear in your SoDEX history.'
+                : 'Your balance changed. SoDEX has not published the price or fee details yet.'}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (r.state === 'not_filled') {
+    return (
+      <div style={{ ...card, borderColor: 'rgba(232,162,58,0.45)' }} data-testid="outcome" data-state="not_filled">
+        <div style={{ fontWeight: 600, marginBottom: 6 }}>Order not filled</div>
+        <div style={{ fontSize: 14, color: POD.ink300, lineHeight: 1.6 }}>{r.reason} (SoDEX status: {r.status}.)</div>
+      </div>
+    );
+  }
+
+  if (r.state === 'resting') {
+    return (
+      <div style={{ ...card, borderColor: 'rgba(232,162,58,0.45)' }} data-testid="outcome" data-state="resting">
+        <div style={{ fontWeight: 600, marginBottom: 6 }}>Order is still open</div>
+        <div style={{ fontSize: 14, color: POD.ink300 }}>SoDEX reports this order as open. Check your orders on SoDEX before sending another.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ ...card, borderColor: 'rgba(232,162,58,0.45)' }} data-testid="outcome" data-state="unknown">
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>Submitted, result not confirmed yet</div>
+      <div style={{ fontSize: 14, color: POD.ink300, lineHeight: 1.6 }}>{r.detail}</div>
+      <div style={{ fontSize: 12, color: POD.ink400, marginTop: 8 }}>Order {o.orderID ?? o.clOrdID}.</div>
+    </div>
+  );
 }
 
 export function TradeClient() {
@@ -117,7 +224,18 @@ export function TradeClient() {
   const [scoresState, setScoresState] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [positions, setPositions] = useState<Position[]>([]);
   const [outcome, setOutcome] = useState<OrderOutcome | null>(null);
-  const [preview, setPreview] = useState<{ text: string; ok: boolean; detail?: string } | null>(null);
+  /** An order SoDEX has accepted but whose fate is still being confirmed. */
+  const [pending, setPending] = useState<{ submitted: Submitted; line: string } | null>(null);
+  const [leverage, setLeverage] = useState<number | null>(null);
+  /** Set by "sell all": the order sells exactly this quantity instead of converting a dollar amount. */
+  const [exactQty, setExactQty] = useState<string | null>(null);
+  /** Set when the SoDEX account has no free API key slot, with the key POD can remove to make room. */
+  const [keyLimit, setKeyLimit] = useState<KeyLimitError | null>(null);
+  /** null while unknown. A failed read never blocks anyone. */
+  const [health, setHealth] = useState<BuilderHealth | null>(null);
+  /** True while we move the wallet to another chain ourselves, so its chainChanged event is not mistaken for a disconnect. */
+  const switchingChain = useRef(false);
+  const [preview, setPreview] = useState<Preview | null>(null);
   const previewSeq = useRef(0);
 
   // Wallet discovery.
@@ -131,6 +249,11 @@ export function TradeClient() {
       stop();
       window.clearTimeout(t);
     };
+  }, []);
+
+  // Is POD's builder account funded well enough for new sign-ups? Checked once, so nobody signs for nothing.
+  useEffect(() => {
+    checkBuilderHealth().then(setHealth);
   }, []);
 
   // POD scores and markets load once, independent of the wallet.
@@ -193,6 +316,7 @@ export function TradeClient() {
     const p = connected?.wallet.provider as { on?: (e: string, h: (...a: unknown[]) => void) => void; removeListener?: (e: string, h: (...a: unknown[]) => void) => void } | undefined;
     if (!p?.on || !connected) return;
     const onChange = () => {
+      if (switchingChain.current) return;
       setConnected(null);
       setAccount(null);
       setKey(null);
@@ -206,24 +330,50 @@ export function TradeClient() {
     };
   }, [connected]);
 
-  const enable = async () => {
-    if (!connected || !account?.accountID) return;
+  const enable = async (wallet: ConnectedWallet | null = connected) => {
+    if (!wallet || !account?.accountID) return;
     setError(null);
+    setKeyLimit(null);
     setBusy('enable');
     try {
       if (key && account.keyListed && !account.approval.approvedBothEngines) {
-        await reapproveFee(connected, account.accountID);
-        await refresh(connected, key);
+        await reapproveFee(wallet, account.accountID);
+        await refresh(wallet, key);
       } else {
-        const res = await enableTrading(connected, account.accountID);
+        const res = await enableTrading(wallet, account.accountID);
         setKey(res.key);
-        await refresh(connected, res.key);
+        await refresh(wallet, res.key);
       }
     } catch (e) {
-      setError(explain(e));
+      if (e instanceof KeyLimitError) setKeyLimit(e);
+      else setError(explain(e));
     } finally {
       setBusy(null);
     }
+  };
+
+  /** Removes POD's oldest key to make room, then carries on enabling trading. */
+  const freeSlot = async () => {
+    if (!connected || !account?.accountID) return;
+    setError(null);
+    setBusy('free-slot');
+    switchingChain.current = true;
+    let wallet: ConnectedWallet | null = null;
+    try {
+      const res = await freeKeySlot(connected, account.accountID);
+      wallet = res.connected;
+      setConnected(wallet);
+      setKeyLimit(null);
+    } catch (e) {
+      setError(explain(e));
+    } finally {
+      // Let the wallet's chainChanged event arrive before we start listening to it again.
+      window.setTimeout(() => {
+        switchingChain.current = false;
+      }, 1500);
+      setBusy(null);
+    }
+    if (wallet) await enable(wallet);
   };
 
   const ready = !!connected && !!account?.accountID && !!key && account.keyListed && account.approval.approvedBothEngines;
@@ -250,52 +400,134 @@ export function TradeClient() {
   const market = list.find((m) => m.label === marketLabel) ?? list.find((m) => /^BTC[/-]/.test(m.label)) ?? list[0] ?? null;
   const score = market ? scores.find((s) => s.asset.toUpperCase() === market.baseCoin.toUpperCase()) : undefined;
 
-  // Live size and fee preview.
+  // An exact sell quantity belongs to one market and one side.
+  useEffect(() => {
+    setExactQty(null);
+  }, [market?.label, side, tab]);
+
+  // The leverage selector starts at the market's own default and resets when the market changes.
+  useEffect(() => {
+    if (market?.engine === 'perps') setLeverage(market.initLeverage ?? 1);
+    else setLeverage(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [market?.label, market?.engine]);
+
+  const leverageOptions = useMemo(() => {
+    if (market?.engine !== 'perps' || !market.maxLeverage) return [] as number[];
+    const wanted = [1, 2, 3, 5, 10, 20, 40, market.initLeverage ?? 0, market.maxLeverage];
+    return [...new Set(wanted.filter((l) => l >= 1 && l <= (market.maxLeverage ?? 1)))].sort((a, b) => a - b);
+  }, [market]);
+
+  // What the account holds of the selected spot market's base asset.
+  const baseHolding = market && market.engine === 'spot' ? account?.spotHoldings.find((h) => h.coin.replace(/^v/, '') === market.baseCoin)?.total ?? 0 : null;
+
+  // Live size, fee, sellability and margin preview. Every result is stamped with the inputs it was built from.
   const usdValue = Number(amount);
+  const previewKey = `${market?.label}|${side}|${amount}|${leverage}|${reduceOnly}|${account?.approval.spot}|${account?.approval.perps}|${baseHolding}|${account?.perpsUsdc}|${exactQty}`;
   useEffect(() => {
     if (!market) return;
     const seq = ++previewSeq.current;
+    const key = previewKey;
     if (!Number.isFinite(usdValue) || usdValue <= 0) {
-      setPreview({ ok: false, text: 'Enter an amount above zero.' });
+      setPreview({ key, ok: false, text: 'Enter an amount above zero.' });
       return;
     }
     const t = window.setTimeout(async () => {
       try {
-        const sized = await sizeOrder(market, side, usdValue);
+        const sized = exactQty && market.engine === 'spot' && side === 'SELL' ? await sizeExact(market, side, exactQty) : await sizeOrder(market, side, usdValue);
         if (seq !== previewSeq.current) return;
         if (!sized.ok) {
-          setPreview({ ok: false, text: sized.reason });
+          setPreview({ key, ok: false, text: sized.reason });
           return;
         }
-        const q = quoteFor(market, side, Number(sized.notional), account?.approval[market.engine] ?? 0);
-        setPreview({
+        const quote = quoteFor(market, side, Number(sized.notional), account?.approval[market.engine] ?? 0);
+        const base: Preview = {
+          key,
           ok: true,
           text: `${sized.quantity} ${market.baseCoin} at ${usd(sized.price, sized.price < 1 ? 5 : 2)}`,
-          detail: q.fee > 0 ? `POD builder fee about ${usd(q.fee, 4)} (${q.rateBp} bp)${q.note ? `. ${q.note}` : ''}` : q.note,
-        });
+          ...(quote.fee > 0 ? { detail: `POD builder fee about ${usd(quote.fee, 4)} (${quote.rateBp} bp)${quote.note ? `. ${quote.note}` : ''}` } : quote.note ? { detail: quote.note } : {}),
+        };
+
+        if (market.engine === 'spot' && side === 'SELL') {
+          const held = baseHolding ?? 0;
+          const check = checkHoldingIsSellable(market, held, sized.price);
+          if (!check.ok) {
+            setPreview({ key, ok: false, text: check.reason });
+            return;
+          }
+          const maxUsd = Math.ceil(Number(check.notional) * 10000) / 10000;
+          if (Number(sized.quantity) > Number(check.maxQuantity)) {
+            setPreview({ key, ok: false, text: `You hold ${held} ${market.baseCoin} and can sell at most ${check.maxQuantity} (about ${usd(Number(check.notional))}).`, maxSellUsd: maxUsd, maxSellQty: check.maxQuantity });
+            return;
+          }
+          setPreview({ ...base, maxSellUsd: maxUsd, maxSellQty: check.maxQuantity });
+          return;
+        }
+
+        if (market.engine === 'spot' && side === 'BUY') {
+          const sellable = checkBuyIsSellable(market, sized.quantity, sized.price);
+          if (sellable && !sellable.sellable) {
+            // Spot buy fees come out of the asset bought, and the amount spent can round down to a whole step.
+            const suggest = sellable.suggestedNotional ? Math.ceil(Number(sellable.suggestedNotional) * 1.01 * 100) / 100 : undefined;
+            setPreview({
+              ...base,
+              warning: `${sellable.reason}${suggest ? ` Buying about ${usd(suggest)} or more keeps it sellable.` : ''}`,
+              ...(suggest ? { suggestUsd: suggest } : {}),
+            });
+            return;
+          }
+        }
+
+        if (market.engine === 'perps' && !reduceOnly && leverage) {
+          const need = marginNeeded(Number(sized.notional), leverage, Number(market.takerFee ?? 0.0004));
+          const have = account?.perpsUsdc ?? 0;
+          const lev = `${leverage}x leverage`;
+          if (need > have) {
+            const maxLev = market.maxLeverage ?? leverage;
+            setPreview({
+              ...base,
+              ok: false,
+              text: `This order needs about ${usd(need)} of margin at ${lev}, and your Perps balance is ${usd(have)}.${leverage < maxLev ? ` Raise leverage (up to ${maxLev}x) or add funds.` : ' Add funds to your Perps balance.'}`,
+            });
+            return;
+          }
+          setPreview({ ...base, detail: [`Margin about ${usd(need)} at ${lev}, of your ${usd(have)}`, base.detail].filter(Boolean).join('. ') });
+          return;
+        }
+        setPreview(base);
       } catch (e) {
-        if (seq === previewSeq.current) setPreview({ ok: false, text: explain(e) });
+        if (seq === previewSeq.current) setPreview({ key, ok: false, text: explain(e) });
       }
     }, 350);
     return () => window.clearTimeout(t);
-  }, [market, side, usdValue, account]);
+    // previewKey already contains every input the preview reads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewKey, market]);
+
+  const placing = busy === 'order';
 
   const place = async () => {
     if (!connected || !key || !account || !market) return;
     setError(null);
     setOutcome(null);
+    setPending(null);
     setBusy('order');
     try {
       const approvedFee = account.approval[market.engine];
+      const hooks = {
+        onSubmitted: (submitted: Submitted) => setPending({ submitted, line: 'Submitted, confirming with SoDEX…' }),
+        onProgress: (line: string) => setPending((p) => (p ? { ...p, line } : p)),
+      };
       const res =
         market.engine === 'spot'
-          ? await placeSpot({ key, address: connected.address, market, side, usd: usdValue, approvedFee })
-          : await placePerps({ key, address: connected.address, market, side, usd: usdValue, reduceOnly, approvedFee });
+          ? await placeSpot({ key, address: connected.address, market, side, usd: usdValue, ...(exactQty && side === 'SELL' ? { quantity: exactQty } : {}), approvedFee, ...hooks })
+          : await placePerps({ key, address: connected.address, market, side, usd: usdValue, reduceOnly, ...(leverage ? { leverage } : {}), approvedFee, ...hooks });
       setOutcome(res);
       await refresh(connected, key);
     } catch (e) {
       setError(explain(e));
     } finally {
+      setPending(null);
       setBusy(null);
     }
   };
@@ -308,13 +540,20 @@ export function TradeClient() {
       return;
     }
     setError(null);
+    setOutcome(null);
+    setPending(null);
     setBusy(`close-${p.symbol}`);
     try {
-      setOutcome(await closePosition({ key, address: connected.address, market: m, position: p, approvedFee: account.approval.perps }));
+      const hooks = {
+        onSubmitted: (submitted: Submitted) => setPending({ submitted, line: 'Submitted, confirming with SoDEX…' }),
+        onProgress: (line: string) => setPending((q) => (q ? { ...q, line } : q)),
+      };
+      setOutcome(await closePosition({ key, address: connected.address, market: m, position: p, approvedFee: account.approval.perps, ...hooks }));
       await refresh(connected, key);
     } catch (e) {
       setError(explain(e));
     } finally {
+      setPending(null);
       setBusy(null);
     }
   };
@@ -428,7 +667,7 @@ export function TradeClient() {
           <div style={card}>
             <div style={{ fontWeight: 600, marginBottom: 8 }}>This wallet has no SoDEX account yet</div>
             <p style={{ color: POD.ink300, fontSize: 14, lineHeight: 1.7, margin: '0 0 14px' }}>
-              SoDEX creates your trading account with your first deposit. Deposit USDC (or SOSO) from Base, Ethereum or Arbitrum, then come back and check again. The first deposit costs 1 USDC to activate the account.
+              SoDEX creates your trading account with your first deposit. Deposit USDC (or SOSO) from Base, Ethereum or Arbitrum, then come back and check again. The minimum deposit is 5 USDC and smaller ones are not credited. The first deposit also pays 1 USDC to activate the account, and most spot markets need a $5 order, so 10 USDC or more is a comfortable start.
             </p>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <a href={EXPLORER.deposit} target="_blank" rel="noreferrer" style={{ background: POD.lime, color: POD.ink900, padding: '10px 16px', borderRadius: 10, fontWeight: 600, fontSize: 14, textDecoration: 'none' }}>
@@ -453,11 +692,40 @@ export function TradeClient() {
         {header}
         {stepStrip(3)}
         {errorBox}
+        {health && !health.ok && (
+          <div style={{ ...card, borderColor: 'rgba(232,162,58,0.5)', marginBottom: 16, padding: '12px 16px' }} data-testid="builder-paused">
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>New sign-ups are paused for a moment</div>
+            <div style={{ fontSize: 14, color: POD.ink300, lineHeight: 1.6 }}>
+              SoDEX only accepts new fee approvals while POD’s builder account holds at least {health.floor} USDC in both Spot and Perps, and it is below that right now. Please try again shortly. If you are already enabled, trading is not affected.
+            </div>
+          </div>
+        )}
+        {keyLimit && (
+          <div style={{ ...card, borderColor: 'rgba(232,162,58,0.5)', marginBottom: 16 }} data-testid="key-limit">
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>Your SoDEX account is out of API key slots</div>
+            <p style={{ color: POD.ink300, fontSize: 14, lineHeight: 1.7, margin: '0 0 12px' }}>
+              SoDEX allows {keyLimit.slots.used} API keys per account and keeps expired ones, and all {keyLimit.slots.used} are in use. Each browser you enable trading in uses one.
+              {keyLimit.removable
+                ? ` POD can remove the oldest key it made (${keyLimit.removable.name}) to make room. Your wallet will switch to the ${SODEX_CHAIN.name} network and ask for two signatures, one per engine, then one more to enable trading.`
+                : ' None of them were made by POD, so POD cannot remove any. Remove one in your SoDEX account settings, then come back.'}
+            </p>
+            {keyLimit.removable && (
+              <button
+                onClick={freeSlot}
+                disabled={!!busy}
+                data-testid="free-slot"
+                style={{ background: POD.amber, color: POD.ink900, border: 0, padding: '10px 16px', borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: busy ? 'wait' : 'pointer' }}
+              >
+                {busy === 'free-slot' ? 'Confirm in your wallet…' : 'Remove the oldest POD key'}
+              </button>
+            )}
+          </div>
+        )}
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 320px', gap: 20 }} className="pod-trade-grid">
           <div style={card}>
             <div style={{ fontWeight: 600, marginBottom: 8 }}>{needsReapprove ? 'Approve the POD fee again' : 'Enable POD trading: one signature'}</div>
             <p style={{ color: POD.ink300, fontSize: 14, lineHeight: 1.7, margin: 0 }}>
-              One wallet signature registers a trading key that lives only in this browser and expires in 14 days, and approves POD to charge a small fee on the orders it routes. You can clear the approval any time at{' '}
+              One wallet signature registers a trading key that lives only in this browser and expires in {Math.round(TRADE_KEY_TTL_MS / 86_400_000)} days, and approves POD to charge a small fee on the orders it routes. You can clear the approval any time at{' '}
               <a href={EXPLORER.approvals} target="_blank" rel="noreferrer" style={{ color: POD.lime }}>sodex.com/builder-code-approvals</a>.
             </p>
             {feeTable}
@@ -465,8 +733,8 @@ export function TradeClient() {
               The most you can ever be charged is {APPROVAL_CEILING / 10} bp ({APPROVAL_CEILING / 1000}%) of an order. Spot buys carry no fee. The fee is paid to POD’s SoDEX builder account {BUILDER_ID}.
             </p>
             <button
-              onClick={enable}
-              disabled={busy === 'enable'}
+              onClick={() => enable()}
+              disabled={busy === 'enable' || busy === 'free-slot' || (!!health && !health.ok)}
               data-testid="enable-trading"
               style={{ background: POD.lime, color: POD.ink900, border: 0, padding: '12px 20px', borderRadius: 12, fontWeight: 600, fontSize: 15, cursor: busy ? 'wait' : 'pointer' }}
             >
@@ -479,8 +747,10 @@ export function TradeClient() {
     );
   }
 
-  const holding = market && side === 'SELL' && market.engine === 'spot' ? account.spotHoldings.find((h) => h.coin.replace(/^v/, '') === market.baseCoin)?.total ?? 0 : null;
-  const canPlace = preview?.ok === true && !busy && !!market && (holding === null || holding > 0);
+  // A preview built for an older amount is never shown as current, and never lets an order through.
+  const previewFresh = preview?.key === previewKey;
+  const canPlace = previewFresh && preview?.ok === true && !busy && !!market;
+  const marginUsd = market?.engine === 'perps' && leverage && Number.isFinite(usdValue) ? marginNeeded(usdValue, leverage, Number(market.takerFee ?? 0.0004)) : null;
 
   return (
     <>
@@ -571,7 +841,10 @@ export function TradeClient() {
                 <div style={{ ...label, marginBottom: 6 }}>Amount (USDC)</div>
                 <input
                   value={amount}
-                  onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
+                  onChange={(e) => {
+                    setExactQty(null);
+                    setAmount(e.target.value.replace(/[^0-9.]/g, ''));
+                  }}
                   inputMode="decimal"
                   aria-label="Amount in USDC"
                   data-testid="amount"
@@ -579,16 +852,44 @@ export function TradeClient() {
                 />
                 <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                   {[10, 25, 50, 100].map((v) => (
-                    <button key={v} onClick={() => setAmount(String(v))} style={{ flex: 1, padding: '6px 0', borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)', background: POD.ink800, color: POD.ink200, fontSize: 13, cursor: 'pointer' }}>
+                    <button key={v} onClick={() => {
+                      setExactQty(null);
+                      setAmount(String(v));
+                    }} style={{ flex: 1, padding: '6px 0', borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)', background: POD.ink800, color: POD.ink200, fontSize: 13, cursor: 'pointer' }}>
                       ${v}
                     </button>
                   ))}
                 </div>
                 {tab === 'perps' && (
-                  <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12, fontSize: 13, color: POD.ink300 }}>
-                    <input type="checkbox" checked={reduceOnly} onChange={(e) => setReduceOnly(e.target.checked)} />
-                    Reduce only (can only shrink a position)
-                  </label>
+                  <>
+                    <div style={{ ...label, margin: '14px 0 6px' }}>Leverage</div>
+                    <div role="radiogroup" aria-label="Leverage" data-testid="leverage" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {leverageOptions.map((l) => (
+                        <button
+                          key={l}
+                          role="radio"
+                          aria-checked={leverage === l}
+                          data-leverage={l}
+                          disabled={reduceOnly}
+                          onClick={() => setLeverage(l)}
+                          style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)', background: leverage === l ? POD.lime : POD.ink800, color: leverage === l ? POD.ink900 : POD.ink200, fontSize: 13, fontWeight: 600, cursor: reduceOnly ? 'not-allowed' : 'pointer', opacity: reduceOnly ? 0.5 : 1 }}
+                        >
+                          {l}x
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 12, color: POD.ink400, marginTop: 6 }} data-testid="margin-note">
+                      {reduceOnly
+                        ? 'A reduce-only order uses no new margin.'
+                        : marginUsd !== null
+                          ? `Needs about ${usd(marginUsd)} of margin at ${leverage}x. Higher leverage needs less margin and liquidates sooner. The market default is ${market?.initLeverage ?? 1}x.`
+                          : ''}
+                    </div>
+                    <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12, fontSize: 13, color: POD.ink300 }}>
+                      <input type="checkbox" checked={reduceOnly} onChange={(e) => setReduceOnly(e.target.checked)} />
+                      Reduce only (can only shrink a position)
+                    </label>
+                  </>
                 )}
               </div>
             </div>
@@ -621,16 +922,48 @@ export function TradeClient() {
               </div>
             ) : null}
 
-            <div style={{ marginTop: 16, minHeight: 44 }} data-testid="preview" aria-live="polite">
-              {preview && (
+            {baseHolding !== null && market && (
+              <div style={{ marginTop: 14, fontSize: 13, color: POD.ink300 }} data-testid="holding">
+                You hold {baseHolding} {market.baseCoin} on spot.
+                {side === 'SELL' && previewFresh && preview?.maxSellUsd ? (
+                  <button
+                    onClick={() => {
+                      setAmount(String(preview.maxSellUsd));
+                      setExactQty(preview.maxSellQty ?? null);
+                    }}
+                    data-testid="sell-max"
+                    style={{ marginLeft: 10, padding: '3px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: POD.ink800, color: POD.ink100, fontSize: 12, cursor: 'pointer' }}
+                  >
+                    Sell all I can
+                  </button>
+                ) : null}
+                {side === 'SELL' && baseHolding === 0 ? <span style={{ color: '#F2B8BB' }}> There is nothing to sell.</span> : null}
+              </div>
+            )}
+
+            <div style={{ marginTop: 12, minHeight: 44 }} data-testid="preview" aria-live="polite" data-fresh={previewFresh ? 'yes' : 'no'}>
+              {!previewFresh ? (
+                <div style={{ fontSize: 14, color: POD.ink400 }}>Updating the quote…</div>
+              ) : preview ? (
                 <>
                   <div style={{ fontSize: 14, color: preview.ok ? POD.ink50 : '#F2B8BB', ...mono }}>{preview.text}</div>
                   {preview.detail && <div style={{ fontSize: 13, color: POD.ink400, marginTop: 4 }}>{preview.detail}</div>}
+                  {preview.warning && (
+                    <div data-testid="preview-warning" style={{ fontSize: 13, color: POD.amber, marginTop: 6, lineHeight: 1.5 }}>
+                      {preview.warning}
+                      {preview.suggestUsd ? (
+                        <button
+                          onClick={() => setAmount(String(preview.suggestUsd))}
+                          data-testid="use-suggested"
+                          style={{ marginLeft: 10, padding: '3px 10px', borderRadius: 8, border: '1px solid rgba(232,162,58,0.5)', background: 'transparent', color: POD.amber, fontSize: 12, cursor: 'pointer' }}
+                        >
+                          Use {usd(preview.suggestUsd)}
+                        </button>
+                      ) : null}
+                    </div>
+                  )}
                 </>
-              )}
-              {holding !== null && holding === 0 && (
-                <div style={{ fontSize: 13, color: '#F2B8BB', marginTop: 4 }}>You hold no {market?.baseCoin} to sell on spot.</div>
-              )}
+              ) : null}
             </div>
 
             <button
@@ -639,32 +972,14 @@ export function TradeClient() {
               data-testid="place-order"
               style={{ marginTop: 12, width: '100%', background: canPlace ? POD.lime : POD.ink700, color: canPlace ? POD.ink900 : POD.ink400, border: 0, padding: '14px 0', borderRadius: 12, fontWeight: 600, fontSize: 16, cursor: canPlace ? 'pointer' : 'not-allowed' }}
             >
-              {busy === 'order' ? 'Placing order…' : `${tab === 'perps' ? (side === 'BUY' ? 'Go long' : 'Go short') : side === 'BUY' ? 'Buy' : 'Sell'} ${market?.baseCoin ?? ''}`}
+              {placing ? (pending ? 'Confirming with SoDEX…' : 'Placing order…') : `${tab === 'perps' ? (side === 'BUY' ? 'Go long' : 'Go short') : side === 'BUY' ? 'Buy' : 'Sell'} ${market?.baseCoin ?? ''}`}
             </button>
             <p style={{ color: POD.ink400, fontSize: 12, margin: '10px 0 0' }}>
-              Market order, fills immediately against the live book. Requested POD fee: {tab === 'perps' ? FEE_DESCRIPTION.perps : FEE_DESCRIPTION.spot}.
+              Market order against the live book. Requested POD fee: {tab === 'perps' ? FEE_DESCRIPTION.perps : FEE_DESCRIPTION.spot}.
             </p>
           </div>
 
-          {outcome && (
-            <div style={{ ...card, borderColor: outcome.filled ? 'rgba(207,255,61,0.35)' : 'rgba(232,162,58,0.45)' }} data-testid="outcome">
-              <div style={{ fontWeight: 600, marginBottom: 6 }}>{outcome.filled ? 'Order filled' : 'Order accepted, no fill yet'}</div>
-              {outcome.filled ? (
-                <div style={{ fontSize: 14, color: POD.ink200, lineHeight: 1.8, ...mono }}>
-                  {outcome.filled.quantity} at {usd(Number(outcome.filled.price), Number(outcome.filled.price) < 1 ? 5 : 2)}
-                  <br />
-                  Total fee {outcome.filled.fee ?? '0'} {outcome.filled.feeCoin ?? ''}
-                  <br />
-                  POD builder fee {outcome.filled.builderFee ?? '0'}
-                  {outcome.quote.note ? <><br /><span style={{ color: POD.ink400 }}>{outcome.quote.note}</span></> : null}
-                </div>
-              ) : (
-                <div style={{ fontSize: 14, color: POD.ink300 }}>
-                  SoDEX accepted order {outcome.orderID ?? outcome.clOrdID}, but no fill has been reported. A market order that finds no liquidity is cancelled. Check your balances and try again.
-                </div>
-              )}
-            </div>
-          )}
+          <OutcomeCard outcome={outcome} pending={pending} />
 
           {tab === 'perps' && positions.length > 0 && (
             <div style={card} data-testid="positions">
@@ -673,7 +988,7 @@ export function TradeClient() {
                 <div key={p.symbol} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderTop: '1px solid rgba(255,255,255,0.05)', fontSize: 14, ...mono }}>
                   <span style={{ flex: 1 }}>{p.symbol}</span>
                   <span style={{ color: Number(p.size) > 0 ? POD.limeSoft : POD.red }}>{Number(p.size) > 0 ? 'Long' : 'Short'} {p.size.replace(/^-/, '')}</span>
-                  <span style={{ color: POD.ink400 }}>entry {p.avgEntryPrice}</span>
+                  <span style={{ color: POD.ink400 }}>entry {p.avgEntryPrice}{p.leverage ? ` · ${p.leverage}x` : ''}</span>
                   <button onClick={() => close(p)} disabled={!!busy} style={{ background: POD.ink700, color: POD.ink50, border: '1px solid rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>
                     {busy === `close-${p.symbol}` ? 'Closing…' : 'Close'}
                   </button>

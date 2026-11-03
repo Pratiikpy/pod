@@ -103,3 +103,36 @@ export function isUserRejection(err: unknown): boolean {
   const code = e?.code ?? e?.cause?.code;
   return code === 4001 || code === 'ACTION_REJECTED' || /user (rejected|denied)/i.test(e?.message ?? '');
 }
+
+export interface ChainSpec {
+  chainId: number;
+  name: string;
+  rpcUrl: string;
+}
+
+/**
+ * Puts the wallet on a given chain, adding it first if the wallet does not know it.
+ * Needed only for signatures whose signed data names a chain, such as removing an API key.
+ */
+export async function ensureWalletChain(connected: ConnectedWallet, chain: ChainSpec): Promise<ConnectedWallet> {
+  const provider = connected.wallet.provider;
+  const read = async () => Number(await provider.request({ method: 'eth_chainId' }));
+  if ((await read()) === chain.chainId) return { ...connected, chainId: chain.chainId };
+  const hex = `0x${chain.chainId.toString(16)}`;
+  try {
+    await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: hex }] });
+  } catch (err) {
+    if (isUserRejection(err)) throw err;
+    const code = (err as { code?: number } | null)?.code;
+    // 4902 is "chain not added". Some wallets use -32603 or a message instead.
+    const unknownChain = code === 4902 || code === -32603 || /unrecognized|not added|add/i.test((err as Error)?.message ?? '');
+    if (!chain.rpcUrl || !unknownChain) throw err;
+    await provider.request({
+      method: 'wallet_addEthereumChain',
+      params: [{ chainId: hex, chainName: chain.name, nativeCurrency: { name: 'SOSO', symbol: 'SOSO', decimals: 18 }, rpcUrls: [chain.rpcUrl] }],
+    });
+  }
+  const after = await read();
+  if (after !== chain.chainId) throw new Error(`Your wallet is still on another network. Switch it to ${chain.name} and try again.`);
+  return { ...connected, chainId: after };
+}

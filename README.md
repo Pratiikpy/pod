@@ -74,7 +74,7 @@ Weights are normalised by their sum, so a source with no data contributes nothin
 
 POD is a SoDEX **builder**: it earns a small fee on orders routed through it, and a user always approves that fee first.
 
-- **Non-custodial.** Connect any browser wallet (EIP-6963). One signature registers a trading key that lives only in your browser (14-day expiry) and approves POD's builder fee. Orders are signed in the browser and go straight to the SoDEX gateway. POD never holds keys or funds.
+- **Non-custodial.** Connect any browser wallet (EIP-6963). One signature registers a trading key that lives only in your browser (30-day expiry) and approves POD's builder fee. Orders are signed in the browser and go straight to the SoDEX gateway. POD never holds keys or funds.
 - **Spot, Perps and Wealth.** Spot and tokenized ETFs/stocks (Wealth, order-book funds such as QQQ and VOO) share one path. Perps support long, short and close. Wealth vault funds (CXMT, UNITREE, Morpho Earn) are not part of this page.
 - **Fees, as the gateway charges them.** Perps 5 bp on both sides, spot 10 bp on sells only (spot buys carry no builder fee), capped by what the user approved. The page shows the estimate before the order and the amount charged after it.
 - **Builder account:** SoDEX account `235300` (mainnet).
@@ -84,19 +84,40 @@ Proof, all against the real SoDEX testnet gateway, not mocks:
 
 | Check | Result |
 |---|---|
-| SDK unit tests (signing, caps, decimals, sizing, results) | 77 passing |
+| SDK unit tests (signing, caps, decimals, sizing, order confirmation, key slots, leverage wire format) | 128 passing |
 | `packages/sodex-sdk/scripts/verify-builder-testnet.ts` | 18/18: approve, both-engine visibility, wrong signer rejected, replay rejected, fee on real fills at the exact rate, key registration with builder, revoke, clear |
-| `apps/pod-web/e2e/trade.e2e.mjs` (real browser, real EIP-712 signatures) | 32/32: connect, enable, buy, sell, perps open and close, declined signature, minimum-order guidance, reload, deep links from the asset page, onboarding steps, mobile layout, zero console errors |
+| `packages/sodex-sdk/scripts/verify-confirm-testnet.ts` | 9/9: a fill is found from the order record or the balance when the trades list is empty, the gateway ignores the `orderID` filter on trades, and the leverage and margin-mode wire format |
+| `packages/sodex-sdk/scripts/verify-keys-testnet.ts` | 7/7: the 10-key cap, a wallet-signed removal on both engines, registering again afterwards |
+| `apps/pod-web/e2e/trade.e2e.mjs` (real browser, real EIP-712 signatures, a wallet that refuses typed data on the wrong chain like MetaMask) | 64/64: connect, enable, buy, sell, perps long and short at a chosen leverage, declined signature, minimum-order and sellable-holding guidance, stale quotes, order confirmation with the order lists forced empty, key-slot recovery for one-engine and two-engine keys, a paused builder, deep links, onboarding, mobile layout, zero console errors |
 
 On the live fills, the builder fee matched `notional x rate / 100000` to the digit: 5 bp on perps open and close, 10 bp on a spot sell, a request of 100 against an approval of 50 charged 5 bp, and no fee with no approval.
 
 ![Trade page, spot, with the POD read](docs/images/trade-spot-ready.png)
 ![Perps fill and open position](docs/images/trade-perps-filled.png)
 ![Mobile](docs/images/trade-mobile.png)
+![Dust warning on a minimum buy](docs/images/trade-dust-warning.png)
+![Leverage selector and margin](docs/images/trade-leverage.png)
+![Out of API key slots, with the way out](docs/images/trade-key-limit.png)
 
 Run the tests: `pnpm --filter @pod/sodex-sdk test`, then with `NEXT_PUBLIC_SODEX_NETWORK=testnet pnpm --filter @pod/pod-web dev` running, `node apps/pod-web/e2e/trade.e2e.mjs`. The e2e test needs the funded testnet key in `.env` and a Chrome install.
 
-Not verified yet: a real-money mainnet trade, and the Wealth tab against live mainnet funds (the testnet has no tokenized-ETF markets, so that path is tested with a mocked fund list).
+### What live testing found, and how the page handles it
+
+A tester ran ten funded wallets through the live page on mainnet and filed a bug report. Each finding is fixed and has a test that reproduces it.
+
+- **A filled order was reported as "no fill yet".** The trades, open-orders and history endpoints can all stay empty for minutes after a fill. An order is now submitted first and confirmed from three independent sources (the fills, the order's own record, and the balance or position change). "Not filled" is only said when the order's record says so, and a market order recorded as `CANCELED` with a non-zero `executedQty` is a fill.
+- **A minimum buy left a holding that cannot be sold.** The spot buy fee comes out of the asset bought, so the smallest buy ends up one step short of the smallest sell. The ticket now warns, names the amounts and offers a size that stays sellable, and "Sell all I can" sells an exact quantity.
+- **Small perps trades.** A leverage selector (bounded by the market maximum) shows the margin an order needs.
+- **`updateLeverage` sent the margin mode as a word.** It is an integer on the wire (1 isolated, 2 cross).
+- **A quote for an older amount could be acted on.** Each quote is stamped with its inputs, and the order is locked until it matches.
+
+Found while fixing these, not in the report:
+
+- **SoDEX allows 10 API keys per account and keeps expired ones.** Each browser that enables trading uses one, and a half-failed registration can leave a key on one engine only. The page checks the slots before asking for a signature and, at the cap, removes POD's oldest key with the wallet.
+- **The builder account must hold 100 vUSDC in both Spot and Perps, or every new approval is refused.** The page checks this first and pauses sign-ups with an explanation instead of asking for a signature that cannot work. `GET /api/builder-health` returns 200 when healthy and 503 when below the floor, for an uptime monitor.
+- The minimum deposit is 5 USDC on every chain, the first deposit pays 1 USDC to activate the account, and most spot markets need a $5 order.
+
+Not verified yet: a real-money mainnet run of the fixes (every test above is against testnet, which has no tokenized-ETF markets, so the Wealth tab is tested with a mocked fund list), and how the mainnet gateway behaves for the order-confirmation sources after the fix.
 
 ---
 
