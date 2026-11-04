@@ -24,10 +24,10 @@ export const BUILDER_ID: number = Number(process.env['NEXT_PUBLIC_POD_BUILDER_ID
 
 /**
  * Fees POD requests on each order, in tenths of a basis point (10 = 1 bp).
- * Perps 5 bp on both sides, spot 10 bp on sells (spot buys carry no builder fee),
+ * Perps 10 bp on both sides, spot 10 bp on sells (spot buys carry no builder fee),
  * Wealth 10 bp. A user approves one ceiling that covers all of them.
  */
-export const REQUESTED_FEE = { spot: 100, perps: 50, wealth: 100 } as const;
+export const REQUESTED_FEE = { spot: 100, perps: 100, wealth: 100 } as const;
 
 /** The ceiling a user signs once. The gateway charges min(requested, ceiling, engine cap). */
 export const APPROVAL_CEILING = 100;

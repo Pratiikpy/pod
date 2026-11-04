@@ -23,6 +23,7 @@ import {
   checkBuyIsSellable,
   checkHoldingIsSellable,
   closePosition,
+  fillsFor,
   loadPositions,
   marginNeeded,
   placePerps,
@@ -504,6 +505,24 @@ export function TradeClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewKey, market]);
 
+  /**
+   * An order confirmed from its own record or from the balance has no price or fee yet, because SoDEX's
+   * trade list lags. Keep looking for a minute and upgrade the card when the fills appear.
+   */
+  const enrich = (res: OrderOutcome, m: Market, address: `0x${string}`, accountID: number) => {
+    if (res.result.state !== 'filled' || res.result.source === 'trades') return;
+    void (async () => {
+      for (let i = 0; i < 20; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const rows = await fillsFor(m, address, accountID, res).catch(() => []);
+        if (rows.length > 0) {
+          setOutcome((prev) => (prev && prev.clOrdID === res.clOrdID && prev.result.state === 'filled' ? { ...prev, result: { ...prev.result, source: 'trades', fills: rows } } : prev));
+          return;
+        }
+      }
+    })();
+  };
+
   const placing = busy === 'order';
 
   const place = async () => {
@@ -523,6 +542,7 @@ export function TradeClient() {
           ? await placeSpot({ key, address: connected.address, market, side, usd: usdValue, ...(exactQty && side === 'SELL' ? { quantity: exactQty } : {}), approvedFee, ...hooks })
           : await placePerps({ key, address: connected.address, market, side, usd: usdValue, reduceOnly, ...(leverage ? { leverage } : {}), approvedFee, ...hooks });
       setOutcome(res);
+      enrich(res, market, connected.address, key.accountID);
       await refresh(connected, key);
     } catch (e) {
       setError(explain(e));
@@ -548,7 +568,9 @@ export function TradeClient() {
         onSubmitted: (submitted: Submitted) => setPending({ submitted, line: 'Submitted, confirming with SoDEX…' }),
         onProgress: (line: string) => setPending((q) => (q ? { ...q, line } : q)),
       };
-      setOutcome(await closePosition({ key, address: connected.address, market: m, position: p, approvedFee: account.approval.perps, ...hooks }));
+      const closed = await closePosition({ key, address: connected.address, market: m, position: p, approvedFee: account.approval.perps, ...hooks });
+      setOutcome(closed);
+      enrich(closed, m, connected.address, key.accountID);
       await refresh(connected, key);
     } catch (e) {
       setError(explain(e));

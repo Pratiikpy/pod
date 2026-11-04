@@ -276,6 +276,8 @@ async function main() {
   const sellBefore = (await reader.spot.userTrades(funded.address, { limit: 20 })).data.map((t) => t.tradeID);
   await page.getByTestId('place-order').click();
   await page.getByTestId('outcome').getByText(/Order filled/).waitFor({ timeout: 30000 });
+  // If SoDEX's trade list lags, the card first says the fee details are not published yet and upgrades itself later.
+  await page.getByTestId('outcome').getByText(/POD builder fee/).waitFor({ timeout: 80000 });
   const sellOutcome = await page.getByTestId('outcome').innerText();
   const sellTrade = (await reader.spot.userTrades(funded.address, { limit: 20 })).data.find((t) => !sellBefore.includes(t.tradeID) && t.side === 'SELL');
   const shownFee = Number(sellOutcome.match(/POD builder fee ([0-9.]+)/)?.[1] ?? NaN);
@@ -301,8 +303,8 @@ async function main() {
   await page.getByTestId('outcome').getByText(/Order filled/).waitFor({ timeout: 30000 });
   const longTrade = (await reader.perps.userTrades(funded.address, { limit: 20 })).data.find((t) => !perpsBefore.includes(t.tradeID));
   const longOutcome = await page.getByTestId('outcome').innerText();
-  const longWant = longTrade ? (Number(longTrade.price) * Number(longTrade.quantity) * 50) / 100000 : NaN;
-  record('S6a perps long filled with a 5 bp builder fee', !!longTrade && Math.abs(Number(longTrade.builderFee) - longWant) <= longWant * 0.05, `gateway=${longTrade?.builderFee} expected~${longWant} page=${longOutcome.replace(/\n/g, ' | ')}`);
+  const longWant = longTrade ? (Number(longTrade.price) * Number(longTrade.quantity) * 100) / 100000 : NaN;
+  record('S6a perps long filled with a 10 bp builder fee', !!longTrade && Math.abs(Number(longTrade.builderFee) - longWant) <= longWant * 0.05, `gateway=${longTrade?.builderFee} expected~${longWant} page=${longOutcome.replace(/\n/g, ' | ')}`);
   await page.getByTestId('positions').waitFor({ timeout: 10000 });
   await shot(page, '09-perps-position');
   await page.getByRole('button', { name: 'Close' }).first().click();

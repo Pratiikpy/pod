@@ -196,7 +196,7 @@ async function main() {
     const openID = `pbo-${Date.now()}`;
     try {
       assertOrdersAccepted(await trader.perps.newOrder({
-        accountID, symbolID: sym.id, builder: { id: builderID, fee: 50 },
+        accountID, symbolID: sym.id, builder: { id: builderID, fee: 100 },
         orders: [{ clOrdID: openID, modifier: 1, side: 1, type: 2, timeInForce: 3, quantity: qty, reduceOnly: false, positionSide: 1 }],
       }));
     } catch (e) { console.log(`perps ${name} open refused: ${msg(e)}`); continue; }
@@ -205,15 +205,15 @@ async function main() {
     let close: Trade | undefined;
     try {
       assertOrdersAccepted(await trader.perps.newOrder({
-        accountID, symbolID: sym.id, builder: { id: builderID, fee: 50 },
+        accountID, symbolID: sym.id, builder: { id: builderID, fee: 100 },
         orders: [{ clOrdID: closeID, modifier: 1, side: 2, type: 2, timeInForce: 3, quantity: qty, reduceOnly: true, positionSide: 1 }],
       }));
       close = await waitForFill(readPerps, closeID);
     } catch (e) { record(`perps ${name} close with builder accepted`, false, msg(e)); }
     for (const [label, fill] of [['open', open], ['close', close]] as const) {
       const charged = Number(fill?.builderFee ?? Number.NaN);
-      const want = fill ? expectedFee(fill.price, fill.quantity, 50) : Number.NaN;
-      record(`perps ${name} ${label}: builderFee is ~5 bp of notional`, !!fill && near(charged, want), fill ? `charged=${charged} expected~${want.toFixed(8)}` : 'no fill');
+      const want = fill ? expectedFee(fill.price, fill.quantity, 100) : Number.NaN;
+      record(`perps ${name} ${label}: builderFee is ~10 bp of notional`, !!fill && near(charged, want), fill ? `charged=${charged} expected~${want.toFixed(8)}` : 'no fill');
     }
     perpsDone = true;
     break;

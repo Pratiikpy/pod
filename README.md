@@ -76,7 +76,7 @@ POD is a SoDEX **builder**: it earns a small fee on orders routed through it, an
 
 - **Non-custodial.** Connect any browser wallet (EIP-6963). One signature registers a trading key that lives only in your browser (30-day expiry) and approves POD's builder fee. Orders are signed in the browser and go straight to the SoDEX gateway. POD never holds keys or funds.
 - **Spot, Perps and Wealth.** Spot and tokenized ETFs/stocks (Wealth, order-book funds such as QQQ and VOO) share one path. Perps support long, short and close. Wealth vault funds (CXMT, UNITREE, Morpho Earn) are not part of this page.
-- **Fees, as the gateway charges them.** Perps 5 bp on both sides, spot 10 bp on sells only (spot buys carry no builder fee), capped by what the user approved. The page shows the estimate before the order and the amount charged after it.
+- **Fees, as the gateway charges them.** Perps 10 bp on both sides, spot 10 bp on sells only (spot buys carry no builder fee), capped by what the user approved. The page shows the estimate before the order and the amount charged after it.
 - **Builder account:** SoDEX account `235300` (mainnet).
 - **Deep links.** Every coin page and every `/score` reply in the Telegram bot links to `/trade?asset=BTC&side=sell`, with POD's own direction pre-selected.
 
@@ -90,7 +90,7 @@ Proof, all against the real SoDEX testnet gateway, not mocks:
 | `packages/sodex-sdk/scripts/verify-keys-testnet.ts` | 7/7: the 10-key cap, a wallet-signed removal on both engines, registering again afterwards |
 | `apps/pod-web/e2e/trade.e2e.mjs` (real browser, real EIP-712 signatures, a wallet that refuses typed data on the wrong chain like MetaMask) | 64/64: connect, enable, buy, sell, perps long and short at a chosen leverage, declined signature, minimum-order and sellable-holding guidance, stale quotes, order confirmation with the order lists forced empty, key-slot recovery for one-engine and two-engine keys, a paused builder, deep links, onboarding, mobile layout, zero console errors |
 
-On the live fills, the builder fee matched `notional x rate / 100000` to the digit: 5 bp on perps open and close, 10 bp on a spot sell, a request of 100 against an approval of 50 charged 5 bp, and no fee with no approval.
+On the live fills, the builder fee matched `notional x rate / 100000` to the digit: 5 bp on perps open and close (before the perps rate was raised to 10 bp, which the 10 bp ceiling every user already approved allows without a new signature), 10 bp on a spot sell, a request of 100 against an approval of 50 charged 5 bp, and no fee with no approval.
 
 ![Trade page, spot, with the POD read](docs/images/trade-spot-ready.png)
 ![Perps fill and open position](docs/images/trade-perps-filled.png)
@@ -106,6 +106,7 @@ Run the tests: `pnpm --filter @pod/sodex-sdk test`, then with `NEXT_PUBLIC_SODEX
 A tester ran ten funded wallets through the live page on mainnet and filed a bug report. Each finding is fixed and has a test that reproduces it.
 
 - **A filled order was reported as "no fill yet".** The trades, open-orders and history endpoints can all stay empty for minutes after a fill. An order is now submitted first and confirmed from three independent sources (the fills, the order's own record, and the balance or position change). "Not filled" is only said when the order's record says so, and a market order recorded as `CANCELED` with a non-zero `executedQty` is a fill.
+- **Fee details lag behind the fill.** When the order is confirmed from its own record or the balance, the card says the fee details are not published yet and upgrades itself when SoDEX's trade list catches up.
 - **A minimum buy left a holding that cannot be sold.** The spot buy fee comes out of the asset bought, so the smallest buy ends up one step short of the smallest sell. The ticket now warns, names the amounts and offers a size that stays sellable, and "Sell all I can" sells an exact quantity.
 - **Small perps trades.** A leverage selector (bounded by the market maximum) shows the margin an order needs.
 - **`updateLeverage` sent the margin mode as a word.** It is an integer on the wire (1 isolated, 2 cross).

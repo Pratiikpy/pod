@@ -63,6 +63,10 @@ function asList<T>(data: unknown): T[] {
  * The gateway ignores the documented `orderID` filter on trades and returns everything,
  * newest first, so the match is made here by order id or client order id.
  */
+export async function fillsFor(market: Market, address: Address, accountID: number, sub: Submitted): Promise<FillRow[]> {
+  return tradesFor(market.engine, address, accountID, sub);
+}
+
 async function tradesFor(engine: 'spot' | 'perps', address: Address, accountID: number, sub: Submitted): Promise<FillRow[]> {
   const res = (await (engine === 'spot'
     ? reader.spot.userTrades(address, { accountID, limit: 50 })
